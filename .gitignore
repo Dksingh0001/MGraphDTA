@@ -1,0 +1,36 @@
+# Virtual environment
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Dataset files
+data/raw/
+data/processed/
+
+# Model checkpoints and generated results
+checkpoints/*
+results/*
+
+# Keep placeholder files if added later
+!checkpoints/.gitkeep
+!results/.gitkeep
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build files
+*.egg-info/
+build/
+dist/
+
+# Research paper
+bio paper.pdf
