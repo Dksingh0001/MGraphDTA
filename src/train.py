@@ -26,6 +26,27 @@ DEFAULT_SEED = 42
 DeviceArg = Optional[Union[str, torch.device]]
 
 
+class _PyGDataView(Dataset):
+	"""Expose each Davis dictionary item's PyG graph for graph-aware collation."""
+
+	def __init__(self, dataset: Any):
+		self.dataset = dataset
+
+	def __len__(self) -> int:
+		return len(self.dataset)
+
+	def __getitem__(self, index: int) -> Any:
+		item = self.dataset[index]
+		if isinstance(item, dict):
+			try:
+				return item["pyg_data"]
+			except KeyError as exc:
+				raise ValueError(
+					"Dictionary dataset items must contain a 'pyg_data' graph"
+				) from exc
+		return item
+
+
 def resolve_device(device: DeviceArg = None) -> torch.device:
 	"""Resolve auto mode to CUDA when available and CPU otherwise."""
 	if device is None or device == "auto":
@@ -58,7 +79,7 @@ def make_dataloader(
 	if num_workers < 0:
 		raise ValueError("num_workers cannot be negative")
 	return DataLoader(
-		dataset,
+		_PyGDataView(dataset),
 		batch_size=batch_size,
 		shuffle=shuffle,
 		num_workers=num_workers,

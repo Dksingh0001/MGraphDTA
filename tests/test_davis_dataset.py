@@ -15,8 +15,11 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import torch
+from torch_geometric.data import Batch
+
 from src.dataset import DavisDataset
 from src.preprocessing import smiles_to_mol
+from src.train import make_dataloader
 
 
 def test_davis_pipeline(num_samples: int = 5):
@@ -94,5 +97,29 @@ def test_davis_pipeline(num_samples: int = 5):
     print("=" * 70)
 
 
+def test_davis_pyg_batches_variable_edge_counts():
+    dataset = DavisDataset(split="train")
+    indices = (0, 442)
+    samples = [dataset[index] for index in indices]
+
+    assert samples[0]["edge_index"].shape[1] != samples[1]["edge_index"].shape[1]
+
+    batch = next(iter(make_dataloader(
+        torch.utils.data.Subset(dataset, indices), batch_size=2
+    )))
+
+    assert isinstance(batch, Batch)
+    assert batch.num_graphs == 2
+    assert batch.y.shape == (2,)
+    assert batch.target.shape == (2, 1200)
+    assert batch.edge_index.shape[1] == sum(
+        sample["edge_index"].shape[1] for sample in samples
+    )
+    assert batch.x.shape[0] == sum(sample["num_atoms"] for sample in samples)
+    assert batch.batch.shape == (batch.x.shape[0],)
+    assert batch.edge_index.max().item() < batch.x.shape[0]
+
+
 if __name__ == "__main__":
     test_davis_pipeline()
+    test_davis_pyg_batches_variable_edge_counts()
