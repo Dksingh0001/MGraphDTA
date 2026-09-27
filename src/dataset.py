@@ -186,8 +186,9 @@ class DavisDataset(Dataset):
         # 2. Process protein
         protein_tensor, orig_prot_len = preprocess_protein(sequence, max_length=1200)
 
-        # 3. Create PyG Data object (basic topology for now)
+        # 3. Package graph, protein, and label for PyG batching
         pyg_data = Data(
+            x=graph_info["x"],
             edge_index=graph_info["edge_index"],
             target=protein_tensor.unsqueeze(0),
             y=torch.tensor([affinity], dtype=torch.float32)
