@@ -4,18 +4,18 @@
 
 > “MGraphDTA: deep multiscale graph neural network for explainable drug–target binding affinity prediction”
 
-This repository is an academic implementation of the 2022 MGraphDTA research paper. The intended system predicts drug–target binding affinity from molecular graphs and protein sequences, then uses Grad-AAM to explain atom-level contributions. Development is ongoing; the complete prediction pipeline is not integrated yet.
+This repository is an academic implementation of the 2022 MGraphDTA research paper. It implements the forward architecture for predicting drug–target binding affinity from molecular graphs and protein sequences. Grad-AAM explainability is planned but not implemented.
 
-> **Current status:** The MGNN drug encoder and MCNN protein encoder are implemented and their component tests pass. Dataset-to-model integration, the combined prediction model, training, and evaluation are still to come.
+> **Current status:** Davis preprocessing, molecular features, both encoders, the integrated prediction model, and their component/end-to-end tests are implemented. Training, evaluation metrics, Grad-AAM, and experiments remain future work.
 
 ## Project Overview
 
-The planned workflow has two input branches:
+The forward workflow has two input branches:
 
 - **Drug:** SMILES → RDKit molecular graph → MGNN → 96-dimensional drug embedding.
 - **Protein:** amino-acid sequence → integer tokens → learned 128-dimensional embedding → MCNN → 96-dimensional protein embedding.
 
-The embeddings are intended to feed a prediction network that estimates binding affinity. That combined model and prediction step have not been implemented yet.
+The embeddings are concatenated and passed to the implemented regression head, which returns one scalar per drug–target pair. The model has not been trained, so its output is not a validated affinity estimate.
 
 ## Current Status
 
@@ -23,25 +23,25 @@ The embeddings are intended to feed a prediction network that estimates binding 
 |---|---|---|
 | Project setup | ✅ Completed | Python dependencies and environment-check script are present. |
 | Davis preprocessing | ✅ Completed | Davis tables and pKd conversion are implemented; the local dataset verification script passes. Dataset files are not committed. |
-| Molecular graph construction | ✅ Completed | RDKit parsing, 22-dimensional atom features, and bidirected `edge_index` construction are implemented. Dataset-to-model handoff still needs integration. |
+| Molecular graph construction | ✅ Completed | RDKit parsing, 22-dimensional atom features, and bidirected `edge_index` construction are implemented and passed to MGNN through PyG data. |
 | 22-dimensional atom features | ✅ Completed | Feature extraction and tests are implemented; tests pass. |
 | MGNN drug encoder | ✅ Completed | Encoder is implemented; shape, depth-accounting, batching, and forward tests pass. |
 | MCNN protein encoder | ✅ Completed | Encoder is implemented; branch shapes, pooling, gradients, batching, and available-device tests pass. |
 | MGNN tests | ✅ Completed | `tests/test_mgnn.py` passes locally. |
 | MCNN tests | ✅ Completed | `tests/test_mcnn.py` passes locally. |
-| Full MGraphDTA integration | 🔄 Current / next | `src/models/mgraphdta.py` is currently a module description only. `DavisDataset`'s `pyg_data` also does not yet include node features `x`, which MGNN requires. |
-| Prediction network | ⏳ Planned | Not implemented. |
-| Training | ⏳ Planned | `src/train.py` currently contains only a module description. |
+| Full MGraphDTA integration | ✅ Completed | `src/models/mgraphdta.py` connects MGNN, MCNN, and the regression head; end-to-end tests pass on real Davis samples and batched data. |
+| Prediction network | ✅ Completed | `192 → 1024 → 1024 → 256 → 1`, with ReLU and dropout 0.1 after each hidden layer. |
+| End-to-end MGraphDTA tests | ✅ Completed | `tests/test_mgraphdta.py` verifies sample/batch forward passes, dimensions, finite scalar outputs, gradients, and CUDA when available. |
+| Training | ⏳ Planned / next | The training pipeline has not been implemented. No training or benchmark results are claimed. |
 | Evaluation metrics | ⏳ Planned | `src/metrics.py` currently contains only a module description. |
 | Grad-AAM | ⏳ Planned | `src/explainability/grad_aam.py` currently contains only a module description. |
 | Experiments and ablations | ⏳ Planned | No project training experiments are implemented or reported. |
-| Comparison with paper results | ⏳ Planned | No reproduction or benchmark results are claimed. |
 
-No model training results, accuracy metrics, benchmark scores, or paper-reproduction results are reported by this repository at this stage.
+The repository implements and tests the architecture's forward pass only. No training results, accuracy metrics, benchmark scores, or paper-reproduction results are claimed.
 
 ## Architecture
 
-Solid-path encoders are implemented and tested. Dashed-path components are not implemented yet.
+The complete model forward path is implemented. Training, evaluation, and explainability remain unimplemented.
 
 ```mermaid
 flowchart LR
@@ -54,15 +54,14 @@ flowchart LR
     E --> MCNN[MCNN<br/>implemented and tested]
     MCNN --> PD[96-D protein embedding]
 
-    GD --> F[Feature fusion<br/>planned]
+    GD --> F[Feature fusion<br/>192-D]
     PD --> F
-    F -.-> MLP[Prediction network<br/>not implemented]
-    MLP -.-> A[Predicted binding affinity]
+    F --> MLP[Prediction MLP<br/>192 → 1024 → 1024 → 256 → 1]
+    MLP --> A[Scalar forward output<br/>untrained model]
 
     classDef done fill:#e8f5e9,stroke:#2e7d32,color:#102a14;
     classDef planned fill:#fff8e1,stroke:#ed6c02,color:#3b2a00,stroke-dasharray:5 5;
-    class MGNN,GD,E,MCNN,PD done;
-    class F,MLP,A planned;
+    class MGNN,GD,E,MCNN,PD,F,MLP,A done;
 ```
 
 ## Davis Dataset
@@ -76,6 +75,8 @@ Davis preprocessing converts measured $K_d$ values in nanomolar units to pKd usi
 - Protein token sequences padded or truncated to 1,200 positions
 
 The raw dataset and processed CSVs are gitignored and are not included in this repository. `src/dataset.py` expects the raw Davis files under `data/raw/davis/` (including the affinity matrix and fold files). Provide the dataset locally before running `tests/test_davis_dataset.py`; no data-download workflow is included.
+
+Each `DavisDataset` item includes a PyTorch Geometric `pyg_data` object containing `x` (atom features shaped `[number_of_atoms, 22]`), `edge_index`, `target` (protein tokens shaped `[1, 1200]`), and `y` (affinity target). PyG batches these into a combined node matrix and edge list, a graph-membership `batch` vector, protein tokens shaped `[B, 1200]`, and labels. `MGraphDTA` consumes these fields directly.
 
 ## Drug Representation
 
@@ -118,6 +119,16 @@ Each convolution is followed by ReLU. Adaptive max pooling reduces each branch t
 
 **Paper and released-code distinction:** The paper describes branch feature maps symbolically with sequence length 1,200, but does not explicitly specify convolution padding. The authors' released implementation omits the padding argument, so PyTorch uses `padding=0`; its actual branch lengths are 1198, 1196, and 1194 before pooling. This project follows the released implementation and does not attribute `padding=0` to an explicit paper setting.
 
+## Integrated Prediction Model
+
+`src/models/mgraphdta.py` concatenates the 96-dimensional protein embedding before the 96-dimensional drug embedding to form a `[B, 192]` joint representation. Its regression head is:
+
+```text
+192 → 1024 → 1024 → 256 → 1
+```
+
+Each hidden linear layer is followed by ReLU and dropout with probability 0.1. The final layer returns one scalar per input pair. These numeric dimensions agree with the project plan and the authors' [released regression implementation](https://github.com/guaguabujianle/MGraphDTA/blob/dev/regression/model.py). The paper describes a multilayer perceptron with ReLU and 0.1 dropout; the released implementation supplies the numeric widths. This is a forward architecture only: no training has been run and no prediction quality is claimed.
+
 ## Tests
 
 The following script-based tests were run successfully in the current local workspace:
@@ -128,6 +139,7 @@ The following script-based tests were run successfully in the current local work
 | `tests/test_davis_dataset.py` | Davis interaction count, SMILES parsing, directed-edge counts, protein tensor length, affinity values, and unique compound/target counts. Requires local Davis data. |
 | `tests/test_mgnn.py` | MGNN depth accounting, stage widths, individual and batched forward passes, output dimensions, finite values, and CUDA when available. |
 | `tests/test_mcnn.py` | MCNN embedding and branch tensor shapes, pooling and fusion dimensions, preprocessing lengths, gradient flow, batch processing, and CUDA when available. |
+| `tests/test_mgraphdta.py` | End-to-end forward pass for one and batched Davis samples, encoder/fusion dimensions, scalar output, finite values, gradients, and CUDA when available. |
 
 Run the scripts from the repository root in PowerShell:
 
@@ -136,6 +148,7 @@ Run the scripts from the repository root in PowerShell:
 .\.venv\Scripts\python.exe tests\test_davis_dataset.py
 .\.venv\Scripts\python.exe tests\test_mgnn.py
 .\.venv\Scripts\python.exe tests\test_mcnn.py
+.\.venv\Scripts\python.exe tests\test_mgraphdta.py
 ```
 
 The Davis test depends on local data files. CUDA checks run only when the selected PyTorch environment can access CUDA.
@@ -176,9 +189,15 @@ MGraphDTA/
     ├── test_atom_features.py
     ├── test_davis_dataset.py
     ├── test_mcnn.py
-    └── test_mgnn.py
+    ├── test_mgnn.py
+    └── test_mgraphdta.py
 ```
 
 ## Development Notes
 
-This is a research implementation in progress, not a claim of a completed reproduction. The current focus is connecting the tested encoders to dataset batches and completing the joint prediction model before implementing training, evaluation, and Grad-AAM.
+This is a research implementation in progress, not a claim of a completed paper reproduction. The encoder architecture and integrated forward pass are implemented and tested. Training, evaluation metrics, Grad-AAM, and experiments remain future work; no training or benchmark results are claimed.
+
+## References
+
+- Yang, Z., Zhong, W., Zhao, L., and Chen, C. Y.-C. “MGraphDTA: deep multiscale graph neural network for explainable drug–target binding affinity prediction.” *Chemical Science*, 2022, 13, 816–833. [Paper](https://doi.org/10.1039/D1SC05095E).
+- Authors' released implementation: [guaguabujianle/MGraphDTA](https://github.com/guaguabujianle/MGraphDTA).
