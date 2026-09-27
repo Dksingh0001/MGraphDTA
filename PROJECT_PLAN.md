@@ -330,21 +330,24 @@ Between adjacent multiscale blocks (and following the 3rd block), a **Transition
   where $\Phi_1, \Phi_2 \in \mathbb{R}^{(M/2) \times M}$, and $M = d + (N-1)h$.
 - The channel reduction halves the feature map size ($M \to M / 2$), maintaining computational feasibility.
 
-### 8.2 Layer Count Accounting (27 Layers)
+### 8.2 Layer Count Accounting (27 Reported Layers)
 
-The super-deep 27-layer count in the paper is strictly accounted for:
+The paper reports an MGNN depth of 27 architectural units: three multiscale
+blocks with eight DenseLayer units each, followed by three transition layers.
+The initial convolution (`conv0`) is part of the architecture, but is not
+included in this reported 27-unit count:
 
-- Initial Convolution (`conv0`): 1 layer
-- Multiscale Block 1: 8 graph convolutional steps
-- Transition Layer 1: 1 graph convolutional layer
-- Multiscale Block 2: 8 graph convolutional steps
-- Transition Layer 2: 1 graph convolutional layer
-- Multiscale Block 3: 8 graph convolutional steps
-- Transition Layer 3: 1 graph convolutional layer
+Paper-reported depth = 3 × 8 + 3 = 24 DenseLayer units + 3 transitions = 27.
 
-$$
-\text{Total GNN Depth} = 3 \times 8 + 3 = 27 \text{ graph convolutional layers}
-$$
+For clarity, the corresponding counts in this project's implementation are:
+
+- **Paper-reported MGNN depth:** 27 architectural units = 24 DenseLayer units + 3 transition layers; excludes `conv0`.
+- **Physical top-level stages:** 28 = `conv0` + 24 DenseLayer units + 3 transition layers.
+- **Literal `GraphConv` modules:** 52 = `conv0` (1) + two `GraphConv` operations in each DenseLayer unit (24 × 2) + transitions (3).
+
+These counts describe the same architecture at different levels: the reported
+depth treats each bottleneck DenseLayer as one architectural unit, while the
+literal module count includes both graph convolutions inside that unit.
 
 ### 8.3 Readout Phase
 
