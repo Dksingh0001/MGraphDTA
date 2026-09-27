@@ -381,12 +381,20 @@ Input protein representation $S \in \mathbb{R}^{1200 \times 128}$ is fed into 3 
 - **Branch 2 ($F_2$):** 2 stacked Conv1D layers (kernel size 3) $\to$ Receptive field = **5 residues** (since $3 + (3-1) = 5$).
 - **Branch 3 ($F_3$):** 3 stacked Conv1D layers (kernel size 3) $\to$ Receptive field = **7 residues** (since $5 + (3-1) = 7$).
 
-All convolutions use:
+The authors' released implementation configures the branches as follows:
 
 - `in_channels = 128` (for the first layer of each branch)
 - `out_channels = 96`
 - `kernel_size = 3`, `stride = 1`, `padding = 0` (valid conv)
 - `ReLU` activation
+
+**Paper/released-code distinction:** The paper describes each branch feature
+map symbolically as $C \in \mathbb{R}^{1200 \times h}$, but does not specify
+the convolution stride or padding. In the released code, `TargetRepresentation`
+calls `StackCNN` with kernel size 3 but omits stride and padding, so
+`Conv1dReLU` uses its defaults of stride 1 and padding 0. The released branches
+therefore produce sequence lengths 1198, 1196, and 1194 before pooling, rather
+than retaining length 1200. This implementation follows the released code.
 
 ### 9.3 Temporal Pooling and Branch Fusion
 
