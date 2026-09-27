@@ -6,7 +6,7 @@
 
 This repository is an academic implementation of the 2022 MGraphDTA research paper. It implements the forward architecture for predicting drug–target binding affinity from molecular graphs and protein sequences. Grad-AAM explainability is planned but not implemented.
 
-> **Current status:** Davis preprocessing, molecular features, both encoders, the integrated prediction model, and their component/end-to-end tests are implemented. Training, evaluation metrics, Grad-AAM, and experiments remain future work.
+> **Current status:** Davis preprocessing, molecular features, both encoders, the integrated prediction model, and the reusable training pipeline are implemented and tested. No full training or benchmark run has been performed. Grad-AAM and experiments remain future work.
 
 ## Project Overview
 
@@ -32,16 +32,17 @@ The embeddings are concatenated and passed to the implemented regression head, w
 | Full MGraphDTA integration | ✅ Completed | `src/models/mgraphdta.py` connects MGNN, MCNN, and the regression head; end-to-end tests pass on real Davis samples and batched data. |
 | Prediction network | ✅ Completed | `192 → 1024 → 1024 → 256 → 1`, with ReLU and dropout 0.1 after each hidden layer. |
 | End-to-end MGraphDTA tests | ✅ Completed | `tests/test_mgraphdta.py` verifies sample/batch forward passes, dimensions, finite scalar outputs, gradients, and CUDA when available. |
-| Training | ⏳ Planned / next | The training pipeline has not been implemented. No training or benchmark results are claimed. |
+| Training pipeline | ✅ Completed | Reusable optimization, validation, early stopping, best-checkpoint save/load, and final test evaluation are implemented. No full training or benchmark results are claimed. |
+| Training protocol tests | ✅ Completed | `tests/test_training.py` covers reproducible split indices, validation-driven checkpointing/stopping, test isolation, final test evaluation, and CPU/CUDA smoke paths. |
 | Evaluation metrics | ⏳ Planned | `src/metrics.py` currently contains only a module description. |
 | Grad-AAM | ⏳ Planned | `src/explainability/grad_aam.py` currently contains only a module description. |
 | Experiments and ablations | ⏳ Planned | No project training experiments are implemented or reported. |
 
-The repository implements and tests the architecture's forward pass only. No training results, accuracy metrics, benchmark scores, or paper-reproduction results are claimed.
+The repository implements and tests the architecture's forward pass and training pipeline. No full training results, accuracy metrics, benchmark scores, or paper-reproduction results are claimed.
 
 ## Architecture
 
-The complete model forward path is implemented. Training, evaluation, and explainability remain unimplemented.
+The complete model forward path and Davis training pipeline are implemented. No training run has been performed; Grad-AAM and broader experiments remain unimplemented.
 
 ```mermaid
 flowchart LR
@@ -75,6 +76,12 @@ Davis preprocessing converts measured $K_d$ values in nanomolar units to pKd usi
 - Protein token sequences padded or truncated to 1,200 positions
 
 The raw dataset and processed CSVs are gitignored and are not included in this repository. `src/dataset.py` expects the raw Davis files under `data/raw/davis/` (including the affinity matrix and fold files). Provide the dataset locally before running `tests/test_davis_dataset.py`; no data-download workflow is included.
+
+### Train/Validation/Test Protocol
+
+The provided Davis training folds are flattened into 25,046 training interactions; the independent fold contains 5,010 test interactions. Training splits only the training dataset into a 90% optimization subset and a 10% validation subset (configurable with `--validation-fraction`, default `0.1`; default seed `42`). The validation subset selects checkpoints and controls early stopping. The best checkpoint is restored before the independent test dataset is loaded and evaluated once; test examples are not used by optimization or model selection.
+
+This is the project's protocol, not an exact reproduction of the paper's six-part cross-validation protocol or the authors' released regression trainer. The released trainer evaluates its test dataset during training; this project deliberately keeps its independent test fold isolated.
 
 Each `DavisDataset` item includes a PyTorch Geometric `pyg_data` object containing `x` (atom features shaped `[number_of_atoms, 22]`), `edge_index`, `target` (protein tokens shaped `[1, 1200]`), and `y` (affinity target). PyG batches these into a combined node matrix and edge list, a graph-membership `batch` vector, protein tokens shaped `[B, 1200]`, and labels. `MGraphDTA` consumes these fields directly.
 
@@ -127,7 +134,7 @@ Each convolution is followed by ReLU. Adaptive max pooling reduces each branch t
 192 → 1024 → 1024 → 256 → 1
 ```
 
-Each hidden linear layer is followed by ReLU and dropout with probability 0.1. The final layer returns one scalar per input pair. These numeric dimensions agree with the project plan and the authors' [released regression implementation](https://github.com/guaguabujianle/MGraphDTA/blob/dev/regression/model.py). The paper describes a multilayer perceptron with ReLU and 0.1 dropout; the released implementation supplies the numeric widths. This is a forward architecture only: no training has been run and no prediction quality is claimed.
+Each hidden linear layer is followed by ReLU and dropout with probability 0.1. The final layer returns one scalar per input pair. These numeric dimensions agree with the project plan and the authors' [released regression implementation](https://github.com/guaguabujianle/MGraphDTA/blob/dev/regression/model.py). The paper describes a multilayer perceptron with ReLU and 0.1 dropout; the released implementation supplies the numeric widths. The training pipeline is implemented, but no training has been run and no prediction quality is claimed.
 
 ## Tests
 
@@ -140,6 +147,7 @@ The following script-based tests were run successfully in the current local work
 | `tests/test_mgnn.py` | MGNN depth accounting, stage widths, individual and batched forward passes, output dimensions, finite values, and CUDA when available. |
 | `tests/test_mcnn.py` | MCNN embedding and branch tensor shapes, pooling and fusion dimensions, preprocessing lengths, gradient flow, batch processing, and CUDA when available. |
 | `tests/test_mgraphdta.py` | End-to-end forward pass for one and batched Davis samples, encoder/fusion dimensions, scalar output, finite values, gradients, and CUDA when available. |
+| `tests/test_training.py` | Train/validation partition determinism and exclusivity, validation-based checkpoint/early stopping, test isolation/final evaluation order, and CPU/CUDA smoke tests. |
 
 Run the scripts from the repository root in PowerShell:
 
@@ -190,14 +198,15 @@ MGraphDTA/
     ├── test_davis_dataset.py
     ├── test_mcnn.py
     ├── test_mgnn.py
-    └── test_mgraphdta.py
+    ├── test_mgraphdta.py
+    └── test_training.py
 ```
 
 ## Development Notes
 
-This is a research implementation in progress, not a claim of a completed paper reproduction. The encoder architecture and integrated forward pass are implemented and tested. Training, evaluation metrics, Grad-AAM, and experiments remain future work; no training or benchmark results are claimed.
+This is a research implementation in progress, not a claim of a completed paper reproduction. The encoder architecture, integrated forward pass, and isolated train/validation/test pipeline are implemented and tested. Full training, broader evaluation metrics, Grad-AAM, and experiments remain future work; no training or benchmark results are claimed.
 
 ## References
 
-- Yang, Z., Zhong, W., Zhao, L., and Chen, C. Y.-C. “MGraphDTA: deep multiscale graph neural network for explainable drug–target binding affinity prediction.” *Chemical Science*, 2022, 13, 816–833. [Paper](https://doi.org/10.1039/D1SC05095E).
+- Yang, Z. et al. "MGraphDTA: deep multiscale graph neural network for explainable drug-target binding affinity prediction." Chemical Science, 2022, 13, 816-833. [Paper](https://doi.org/10.1039/D1SC05095E).
 - Authors' released implementation: [guaguabujianle/MGraphDTA](https://github.com/guaguabujianle/MGraphDTA).

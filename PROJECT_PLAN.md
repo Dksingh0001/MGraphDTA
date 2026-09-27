@@ -458,13 +458,19 @@ The combined descriptor is fed into a 4-layer Multi-Layer Perceptron (MLP):
 
 - **Epochs:** Up to 3,000 epochs.
 - **Iteration Step Evaluation:** Every 50 mini-batch steps defines an evaluation epoch (`steps_per_epoch = 50`).
-- **Validation Checkpoint:** Evaluate validation/test loss and Concordance Index (CI).
+- **Validation Checkpoint:** Validation MSE controls checkpoint selection and early stopping. Additional evaluation metrics, including Concordance Index (CI), will be implemented separately. Keep the independent test partition untouched until final evaluation.
 - **Early Stopping Patience:** Stop training if validation loss fails to improve for 400 consecutive epochs (`early_stop_epoch = 400`).
 
 ### 11.3 Hyperparameter Tuning
 
 - Hyperparameters were optimized on the Davis training set using 5-fold cross-validation with **Optuna**.
 - Once optimized, hyperparameters were held fixed across all other datasets (KIBA, Metz, Filtered Davis, Human, C. elegans, ToxCast).
+
+### Davis Evaluation Protocol in This Project
+
+The available Davis fold files provide five training folds and one independent test fold. `prepare_davis_tables` flattens the five training folds into `davis_train.csv` and writes the independent fold to `davis_test.csv`. This project creates a reproducible 10% validation subset from `davis_train.csv` (default seed 42); the remaining 90% is used for optimization. Validation loss alone controls checkpoint selection and early stopping. The best validation checkpoint is restored before `davis_test.csv` is loaded and evaluated once for final test MSE.
+
+This is this project's evaluation protocol, not an exact reproduction of either source protocol. The paper describes five-fold cross-validation on five of six random partitions and an independent sixth test partition. The authors' released regression script loads prebuilt train/test datasets and evaluates the test dataset during training for checkpoint selection and early stopping. This project does not use its independent test partition during training or model selection.
 
 ### 11.4 Hardware Requirements
 
@@ -695,8 +701,8 @@ gantt
 - **Tasks:**
   1. Implement vectorized Concordance Index (`get_cindex`), $r_m^2$, RMSE, and MSE.
   2. Build training loop with Adam optimizer ($\text{lr} = 5 \times 10^{-4}$), batch size 512, and early stopping patience (400 epochs).
-  3. Implement logging for train loss, train CI, test loss, and test CI.
-  4. Save best model weights checkpoint on minimum validation/test MSE.
+   3. Implement logging for train loss and validation loss; reserve test metrics for final evaluation.
+   4. Save best model weights checkpoint on minimum validation MSE.
 
 ### Phase 5: Grad-AAM Explainability & Visualization
 
