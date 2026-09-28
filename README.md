@@ -32,8 +32,8 @@ The embeddings are concatenated and passed to the regression head, which returns
 | Full MGraphDTA integration | ✅ Completed | `src/models/mgraphdta.py` connects MGNN, MCNN, and the regression head; end-to-end tests pass on real Davis samples and batched data. |
 | Prediction network | ✅ Completed | `192 → 1024 → 1024 → 256 → 1`, with ReLU and dropout 0.1 after each hidden layer. |
 | End-to-end MGraphDTA tests | ✅ Completed | `tests/test_mgraphdta.py` verifies sample/batch forward passes, dimensions, finite scalar outputs, gradients, and CUDA when available. |
-| Training pipeline | ✅ Completed | Reusable optimization, validation, early stopping, best-checkpoint save/load, and final test evaluation are implemented. No full training or benchmark results are claimed. |
-| Training protocol tests | ✅ Completed | `tests/test_training.py` covers reproducible split indices, validation-driven checkpointing/stopping, test isolation, final test evaluation, and CPU/CUDA smoke paths. |
+| Training pipeline | ✅ Completed | Reusable optimization, validation, early stopping, best-checkpoint restoration, epoch-level MSE reporting, history/curve/metrics output, and final test evaluation are implemented. No full training or benchmark results are claimed. |
+| Training protocol tests | ✅ Completed | `tests/test_training.py` covers reproducible split indices, validation-driven checkpointing/stopping, training artifacts, test isolation, final test evaluation, and CPU/CUDA smoke paths. |
 | Davis pilot | ✅ Reported | 10 epochs; best validation MSE 0.478949 and independent test MSE 0.569563. These are pilot-only results. |
 | Full training | ⏳ Not completed | The planned run is up to 3,000 epochs; no full run or paper-reproduction result is claimed. |
 | Evaluation metrics | ⏳ Planned | `src/metrics.py` currently contains only a module description. |
@@ -172,6 +172,8 @@ The command trains with Adam and MSE. Each reported epoch contains 50 optimizer 
 
 The defaults specify **up to** 3,000 epochs, 50 updates per epoch, batch size 512, learning rate 0.0005, and patience 400. The complete 3,000-epoch experiment has **not** been completed.
 
+Each epoch reports training and validation MSE. A completed training run writes `results/davis/training_history.csv`, `results/davis/training_curve.png`, and `results/davis/final_metrics.json`; these generated outputs are ignored by Git. The JSON includes the restored best-validation checkpoint's independent test MSE after final evaluation.
+
 ### 10-Epoch Pilot Results
 
 The reported pilot completed 10 epochs and obtained:
@@ -194,7 +196,7 @@ The test suite covers:
 | `tests/test_mgnn.py` | MGNN depth accounting, stage widths, individual and batched forward passes, output dimensions, finite values, and CUDA when available. |
 | `tests/test_mcnn.py` | MCNN embedding and branch tensor shapes, pooling and fusion dimensions, preprocessing lengths, gradient flow, batch processing, and CUDA when available. |
 | `tests/test_mgraphdta.py` | End-to-end forward pass for one and batched Davis samples, encoder/fusion dimensions, scalar output, finite values, gradients, and CUDA when available. |
-| `tests/test_training.py` | Train/validation partition determinism and exclusivity, validation-based checkpoint/early stopping, test isolation/final evaluation order, and CPU/CUDA smoke tests. |
+| `tests/test_training.py` | Train/validation partition determinism and exclusivity, validation-based checkpoint/early stopping, training history/curve/metrics outputs, test isolation/final evaluation order, and CPU/CUDA smoke tests. |
 
 Run the scripts from the repository root in PowerShell:
 

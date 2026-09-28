@@ -16,13 +16,16 @@ from src.train import (
     DEFAULT_VALIDATION_FRACTION,
     evaluate,
     fit,
+    generate_training_curve,
     load_checkpoint,
     make_dataloader,
     resolve_device,
+    save_final_metrics,
     split_train_validation,
     train_davis,
     train_one_epoch,
     validate,
+    write_training_history,
 )
 
 
@@ -141,12 +144,78 @@ def test_fit_selects_checkpoint_and_stops_using_validation_loss(tmp_path):
     assert len(result["history"]) == 4
     assert result["best_epoch"] == 2
     assert result["best_validation_loss"] == 4.0
+    assert result["epochs_completed"] == 4
+    assert result["stopped_early"] is True
+    assert result["history"][0]["patience_counter"] == 0
+    assert result["history"][1]["patience_counter"] == 0
+    assert result["history"][2]["patience_counter"] == 1
+    assert result["history"][3]["patience_counter"] == 2
+    assert result["history"][1]["is_best"] is True
+    assert result["history"][2]["is_best"] is False
     assert validated_loaders == [validation_loader] * 4
 
     best_model = TinyRegressor()
     checkpoint = load_checkpoint(checkpoint_path, best_model, device="cpu")
     assert checkpoint["epoch"] == 2
     assert best_model.weight.item() == 2.0
+
+
+def test_training_history_csv_and_curve_are_written(tmp_path):
+    history = [
+        {
+            "epoch": 1,
+            "training_mse": 1.0,
+            "validation_mse": 0.8,
+            "best_validation_mse": 0.8,
+            "is_best": True,
+            "patience_counter": 0,
+        },
+        {
+            "epoch": 2,
+            "training_mse": 0.7,
+            "validation_mse": 0.5,
+            "best_validation_mse": 0.5,
+            "is_best": True,
+            "patience_counter": 0,
+        },
+    ]
+    csv_path = tmp_path / "training_history.csv"
+    curve_path = tmp_path / "training_curve.png"
+
+    write_training_history(history, csv_path)
+    generate_training_curve(history, curve_path)
+
+    assert csv_path.exists()
+    assert curve_path.exists()
+    csv_text = csv_path.read_text(encoding="utf-8")
+    assert "epoch,training_mse,validation_mse,best_validation_mse,is_best,patience_counter" in csv_text
+    assert "1,1.0,0.8,0.8,True,0" in csv_text
+    assert curve_path.stat().st_size > 0
+
+
+def test_final_metrics_json_is_created(tmp_path):
+    metrics = {
+        "best_epoch": 3,
+        "best_validation_mse": 0.5,
+        "final_training_mse": 0.7,
+        "final_validation_mse": 0.55,
+        "independent_test_mse": 0.6,
+        "epochs_completed": 3,
+        "stopped_early": True,
+        "patience": 2,
+        "learning_rate": 5e-4,
+        "batch_size": 512,
+        "steps_per_epoch": 50,
+        "seed": 42,
+        "device": "cpu",
+    }
+    output_path = tmp_path / "final_metrics.json"
+    save_final_metrics(output_path, metrics)
+
+    assert output_path.exists()
+    payload = output_path.read_text(encoding="utf-8")
+    assert '"best_epoch": 3' in payload
+    assert '"independent_test_mse": 0.6' in payload
 
 
 def test_test_data_is_loaded_and_evaluated_only_after_training(tmp_path):

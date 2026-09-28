@@ -1,10 +1,15 @@
 """Training and validation pipeline for Davis MGraphDTA regression."""
 
 import argparse
+import csv
+import json
 import random
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Optional, Union
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch import Tensor, nn
@@ -238,6 +243,119 @@ def save_checkpoint(
 	temporary_path.replace(checkpoint_path)
 
 
+def write_training_history(
+	history: Iterable[Dict[str, Any]],
+	csv_path: Union[str, Path],
+) -> Path:
+	"""Persist epoch-level training metrics to CSV."""
+	output_path = Path(csv_path)
+	output_path.parent.mkdir(parents=True, exist_ok=True)
+	fieldnames = [
+		"epoch",
+		"training_mse",
+		"validation_mse",
+		"best_validation_mse",
+		"is_best",
+		"patience_counter",
+	]
+	with output_path.open("w", newline="", encoding="utf-8") as handle:
+		writer = csv.DictWriter(handle, fieldnames=fieldnames)
+		writer.writeheader()
+		for record in history:
+			writer.writerow({
+				"epoch": record["epoch"],
+				"training_mse": record["training_mse"],
+				"validation_mse": record["validation_mse"],
+				"best_validation_mse": record["best_validation_mse"],
+				"is_best": record["is_best"],
+				"patience_counter": record["patience_counter"],
+			})
+	return output_path
+
+
+def generate_training_curve(
+	history: Iterable[Dict[str, Any]],
+	output_path: Union[str, Path],
+) -> Path:
+	"""Build the training/validation MSE curve from recorded epoch history."""
+	history = list(history)
+	output_file = Path(output_path)
+	output_file.parent.mkdir(parents=True, exist_ok=True)
+
+	fig, ax = plt.subplots(figsize=(10, 6))
+	ax.set_title("MGraphDTA Davis Training Curve")
+	ax.set_xlabel("Epoch")
+	ax.set_ylabel("MSE")
+	ax.grid(True, linestyle="--", alpha=0.6)
+
+	if not history:
+		ax.text(0.5, 0.5, "No training history available", ha="center", va="center", transform=ax.transAxes)
+		ax.set_xlim(0, 1)
+		ax.set_ylim(0, 1)
+		fig.tight_layout()
+		fig.savefig(output_file, dpi=300)
+		plt.close(fig)
+		return output_file
+
+	epochs = [int(record["epoch"]) for record in history]
+	training_mse = [float(record["training_mse"]) for record in history]
+	validation_mse = [float(record["validation_mse"]) for record in history]
+	best_epoch = min(history, key=lambda record: record["validation_mse"])["epoch"]
+	best_validation = min(validation_mse)
+
+	ax.plot(
+		epochs,
+		training_mse,
+		label="Training MSE",
+		marker="o",
+		color="tab:blue",
+		linewidth=2,
+	)
+	ax.plot(
+		epochs,
+		validation_mse,
+		label="Validation MSE",
+		marker="s",
+		color="tab:orange",
+		linewidth=2,
+	)
+	ax.scatter(
+		[best_epoch],
+		[best_validation],
+		color="red",
+		s=60,
+		zorder=5,
+		label=f"Best validation MSE: epoch {best_epoch} = {best_validation}",
+	)
+	ax.annotate(
+		f"Best validation MSE\nEpoch {best_epoch} = {best_validation}",
+		xy=(best_epoch, best_validation),
+		xytext=(best_epoch + max(0.5, len(history) * 0.05), best_validation + 0.03),
+		fontsize=9,
+		bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.9),
+		arrowprops=dict(arrowstyle="->", color="black"),
+	)
+	ax.legend()
+	ax.set_xticks(epochs)
+	fig.tight_layout()
+	fig.savefig(output_file, dpi=300)
+	plt.close(fig)
+	return output_file
+
+
+def save_final_metrics(
+	path: Union[str, Path],
+	metrics: Dict[str, Any],
+) -> Path:
+	"""Serialize the final training summary to JSON."""
+	output_path = Path(path)
+	output_path.parent.mkdir(parents=True, exist_ok=True)
+	with output_path.open("w", encoding="utf-8") as handle:
+		json.dump(metrics, handle, indent=2)
+		handle.write("\n")
+	return output_path
+
+
 def load_checkpoint(
 	path: Union[str, Path],
 	model: nn.Module,
@@ -270,7 +388,7 @@ def fit(
 	checkpoint_path: Optional[Union[str, Path]] = None,
 	on_epoch_end: Optional[Callable[[Dict[str, float]], None]] = None,
 ) -> Dict[str, Any]:
-	"""Train and validate, saving the lowest-validation-loss checkpoint."""
+	"""Train and validate with patience-based early stopping and detailed history."""
 	if epochs < 1:
 		raise ValueError("epochs must be positive")
 	if steps_per_epoch is not None and steps_per_epoch < 1:
@@ -288,8 +406,9 @@ def fit(
 	loss_function = criterion or nn.MSELoss()
 	best_validation_loss = float("inf")
 	best_epoch = 0
-	stale_epochs = 0
+	patience_counter = 0
 	history = []
+	stopped_early = False
 
 	for epoch in range(1, epochs + 1):
 		training_loss = train_one_epoch(
@@ -303,19 +422,11 @@ def fit(
 		validation_loss = validate(
 			model, validation_loader, loss_function, resolved_device
 		)
-		record = {
-			"epoch": epoch,
-			"training_loss": training_loss,
-			"validation_loss": validation_loss,
-		}
-		history.append(record)
-		if on_epoch_end is not None:
-			on_epoch_end(record)
-
 		if validation_loss < best_validation_loss:
 			best_validation_loss = validation_loss
 			best_epoch = epoch
-			stale_epochs = 0
+			patience_counter = 0
+			is_best = True
 			if checkpoint_path is not None:
 				save_checkpoint(
 					checkpoint_path,
@@ -326,15 +437,33 @@ def fit(
 					seed=seed,
 				)
 		else:
-			stale_epochs += 1
-			if patience is not None and stale_epochs >= patience:
-				break
+			patience_counter += 1
+			is_best = False
+
+		record = {
+			"epoch": epoch,
+			"training_mse": float(training_loss),
+			"validation_mse": float(validation_loss),
+			"best_validation_mse": float(best_validation_loss),
+			"is_best": bool(is_best),
+			"patience_counter": int(patience_counter),
+		}
+		history.append(record)
+		if on_epoch_end is not None:
+			on_epoch_end(record)
+
+		if patience is not None and patience_counter >= patience:
+			stopped_early = True
+			break
 
 	return {
 		"history": history,
 		"best_epoch": best_epoch,
 		"best_validation_loss": best_validation_loss,
+		"epochs_completed": len(history),
+		"stopped_early": stopped_early,
 		"device": str(resolved_device),
+		"patience": patience,
 	}
 
 
@@ -383,6 +512,24 @@ def train_davis(
 		checkpoint_path=checkpoint_path,
 		on_epoch_end=on_epoch_end,
 	)
+	history = training_result.get("history", [])
+	training_history_path = Path("results/davis/training_history.csv")
+	training_curve_path = Path("results/davis/training_curve.png")
+	final_metrics_path = Path("results/davis/final_metrics.json")
+
+	if history:
+		write_training_history(history, training_history_path)
+		generate_training_curve(history, training_curve_path)
+		final_training_mse = history[-1].get("training_mse")
+		final_validation_mse = history[-1].get("validation_mse")
+		final_epochs_completed = training_result.get("epochs_completed", len(history))
+	else:
+		write_training_history([], training_history_path)
+		generate_training_curve([], training_curve_path)
+		final_training_mse = None
+		final_validation_mse = None
+		final_epochs_completed = 0
+
 	load_checkpoint(checkpoint_path, model, device=device)
 
 	# Do not construct or iterate over the independent test dataset before this point.
@@ -393,7 +540,30 @@ def train_davis(
 		test_dataset, batch_size, shuffle=False, num_workers=num_workers
 	)
 	test_mse = evaluate(model, test_loader, device=device)
-	return {**training_result, "test_mse": test_mse}
+
+	final_metrics = {
+		"best_epoch": training_result.get("best_epoch", 0),
+		"best_validation_mse": training_result.get("best_validation_loss"),
+		"final_training_mse": final_training_mse,
+		"final_validation_mse": final_validation_mse,
+		"independent_test_mse": float(test_mse),
+		"epochs_completed": final_epochs_completed,
+		"stopped_early": training_result.get("stopped_early", False),
+		"patience": training_result.get("patience", patience),
+		"learning_rate": learning_rate,
+		"batch_size": batch_size,
+		"steps_per_epoch": steps_per_epoch,
+		"seed": seed,
+		"device": training_result.get("device", str(resolve_device(device))),
+	}
+	save_final_metrics(final_metrics_path, final_metrics)
+	return {
+		**training_result,
+		"test_mse": float(test_mse),
+		"training_history_path": str(training_history_path),
+		"training_curve_path": str(training_curve_path),
+		"final_metrics_path": str(final_metrics_path),
+	}
 
 
 def main() -> None:
@@ -416,8 +586,8 @@ def main() -> None:
 
 	def report_epoch(record: Dict[str, float]) -> None:
 		print(
-			"epoch={epoch} training_mse={training_loss:.6f} "
-			"validation_mse={validation_loss:.6f}".format(**record)
+			"epoch={epoch} training_mse={training_mse:.6f} "
+			"validation_mse={validation_mse:.6f}".format(**record)
 		)
 
 	result = train_davis(

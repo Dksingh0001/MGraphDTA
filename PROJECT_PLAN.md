@@ -12,7 +12,7 @@ Original paper: Ziduo Yang, Weihe Zhong, Lu Zhao, and Calvin Yu-Chian Chen, "MGr
 - Davis CSV tables are prepared from the raw ligand, protein, affinity, and fold files. Kd values in nM are converted to pKd using `9 - log10(Kd_nM)`.
 - RDKit preprocessing creates bidirectional molecular graphs with 22-dimensional atom features. Protein sequences are mapped to integer tokens and padded or truncated to 1,200 residues.
 - MGNN, MCNN, the MGraphDTA fusion module, and the scalar regression head are implemented and covered by component/integration tests.
-- The training pipeline supports Adam/MSE, configurable batch size, CUDA/CPU selection, checkpoint save/load, validation-based selection and early stopping, and final independent-test evaluation.
+- The training pipeline supports Adam/MSE, configurable batch size, CUDA/CPU selection, validation-based early stopping, best-checkpoint restoration, epoch-level training/validation MSE reporting, and final independent-test evaluation. It writes epoch history to `results/davis/training_history.csv`, a curve to `results/davis/training_curve.png`, and the final run summary to `results/davis/final_metrics.json`.
 - Training data is split reproducibly into optimization and validation subsets. The independent test dataset is constructed only after training and best-checkpoint restoration.
 - Script-style tests cover preprocessing, encoders, model integration, and variable-size PyG graph batching. `tests/test_training.py` covers the split and training protocol.
 
@@ -25,7 +25,7 @@ Original paper: Ziduo Yang, Weihe Zhong, Lu Zhao, and Calvin Yu-Chian Chen, "MGr
 | Drug encoder | Implemented | `src/models/mgnn.py`; three 8-layer dense blocks, transitions, and 96-dimensional readout |
 | Protein encoder | Implemented | `src/models/mcnn.py`; three branches with 1, 2, and 3 kernel-3 convolutions and 96 channels, followed by a 96-dimensional projection |
 | Prediction head | Implemented | `src/models/mgraphdta.py`; fused 192-dimensional vector, MLP widths 1024, 1024, 256, 1, ReLU and 0.1 dropout on hidden layers |
-| Training and split isolation | Implemented | `src/train.py`; validation MSE controls checkpoint selection/early stopping; test evaluated after restore |
+| Training and split isolation | Implemented | `src/train.py`; validation MSE controls checkpoint selection/early stopping; best checkpoint restored before test evaluation; MSE history, curve, and final metrics are written |
 | Evaluation metrics | Pending | `src/metrics.py` contains a module description but no metric functions |
 | Grad-AAM | Pending | `src/explainability/grad_aam.py` contains a module description but no implementation |
 | Other datasets/experiments | Pending | No additional dataset pipeline or completed ablation is evidenced in the current source tree |
