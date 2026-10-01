@@ -1,0 +1,11 @@
+{
+  "dataset": "davis",
+  "checkpoint": "results/davis/run_112_backup/mgraphdta_best.pt",
+  "best_epoch": 91,
+  "best_validation_mse": 0.23236284946015257,
+  "test_mse": 0.2570410931482094,
+  "test_rmse": 0.5069922022558231,
+  "test_ci": 0.8790447807642716,
+  "test_r_m2": 0.30371033880617826,
+  "device": "cuda"
+}
