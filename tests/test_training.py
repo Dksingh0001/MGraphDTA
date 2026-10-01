@@ -15,6 +15,7 @@ from src.train import (
     DEFAULT_SEED,
     DEFAULT_VALIDATION_FRACTION,
     evaluate,
+    evaluate_checkpoint,
     fit,
     generate_training_curve,
     load_checkpoint,
@@ -218,6 +219,52 @@ def test_final_metrics_json_is_created(tmp_path):
     assert '"independent_test_mse": 0.6' in payload
 
 
+def test_evaluate_checkpoint_writes_test_metrics_without_training(tmp_path):
+    class FakeDavisDataset:
+        def __init__(self, split, **_kwargs):
+            assert split == "test"
+
+    test_dataset = FakeDavisDataset("test")
+    test_loader = object()
+    metrics_path = tmp_path / "final_metrics.json"
+
+    with patch("src.train.MGraphDTA", TinyRegressor), patch(
+        "src.train.load_checkpoint",
+        return_value={"epoch": 91, "best_validation_loss": 0.23236284946015257},
+    ) as load_checkpoint_mock, patch(
+        "src.train.DavisDataset", return_value=test_dataset
+    ), patch(
+        "src.train.make_dataloader", return_value=test_loader
+    ) as make_loader_mock, patch(
+        "src.train.evaluate_test_metrics",
+        return_value={"mse": 0.4, "rmse": 0.6324555, "ci": 0.7, "r_m2": 0.2},
+    ) as metrics_mock, patch("src.train.train_davis") as train_mock:
+        result = evaluate_checkpoint(
+            checkpoint_path=tmp_path / "best.pt",
+            device="cpu",
+            metrics_path=metrics_path,
+        )
+
+    load_checkpoint_mock.assert_called_once()
+    make_loader_mock.assert_called_once_with(
+        test_dataset, batch_size=512, shuffle=False, num_workers=0
+    )
+    metrics_mock.assert_called_once_with(
+        metrics_mock.call_args.args[0], test_loader, device=torch.device("cpu")
+    )
+    train_mock.assert_not_called()
+    assert result["best_epoch"] == 91
+    assert result["best_validation_mse"] == 0.23236284946015257
+    assert result["test_mse"] == 0.4
+    assert result["final_metrics_path"] == str(metrics_path)
+    import json
+
+    saved_metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    assert saved_metrics["dataset"] == "davis"
+    assert saved_metrics["best_epoch"] == 91
+    assert saved_metrics["test_r_m2"] == 0.2
+
+
 def test_test_data_is_loaded_and_evaluated_only_after_training(tmp_path):
     events = []
 
@@ -270,7 +317,9 @@ def test_test_data_is_loaded_and_evaluated_only_after_training(tmp_path):
         "src.train.fit", side_effect=fake_fit
     ), patch("src.train.load_checkpoint", side_effect=fake_load_checkpoint), patch(
         "src.train.evaluate", side_effect=fake_evaluate
-    ):
+    ), patch("src.train.write_training_history"), patch(
+        "src.train.generate_training_curve"
+    ), patch("src.train.save_final_metrics"):
         result = train_davis(
             checkpoint_path=tmp_path / "unused.pt",
             epochs=1,

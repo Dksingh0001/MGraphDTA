@@ -26,36 +26,58 @@ Original paper: Ziduo Yang, Weihe Zhong, Lu Zhao, and Calvin Yu-Chian Chen, "MGr
 | Protein encoder | Implemented | `src/models/mcnn.py`; three branches with 1, 2, and 3 kernel-3 convolutions and 96 channels, followed by a 96-dimensional projection |
 | Prediction head | Implemented | `src/models/mgraphdta.py`; fused 192-dimensional vector, MLP widths 1024, 1024, 256, 1, ReLU and 0.1 dropout on hidden layers |
 | Training and split isolation | Implemented | `src/train.py`; validation MSE controls checkpoint selection/early stopping; best checkpoint restored before test evaluation; MSE history, curve, and final metrics are written |
-| Evaluation metrics | Pending | `src/metrics.py` contains a module description but no metric functions |
+| Evaluation metrics | Implemented | `src/metrics.py` provides MSE, RMSE, CI, and the corrected authors' `r_m^2` calculation; `tests/test_metrics.py` covers known values |
 | Grad-AAM | Pending | `src/explainability/grad_aam.py` contains a module description but no implementation |
 | Other datasets/experiments | Pending | No additional dataset pipeline or completed ablation is evidenced in the current source tree |
 
 The paper calls MGNN 27 architectural units: 24 DenseLayer units and 3 transitions, excluding `conv0`. This implementation has 28 top-level stages including `conv0` and 52 literal GraphConv modules because each DenseLayer has two GraphConv operations. These are different counting conventions for this implementation, not 52 paper-reported layers.
 
-## 4. Pilot Training Status
+## 4. Historical Pilot Training Status
 
-A 10-epoch Davis pilot has been reported with:
+A 10-epoch Davis pilot was previously reported with:
 
 | Measure | Reported pilot value |
 | --- | ---: |
 | Best validation MSE | 0.478949 |
 | Independent test MSE | 0.569563 |
 
-These are **pilot results**, not final results and not a claim of reproducing the paper. The exact pilot invocation, seed, environment details, and retained run log are TODOs for reproducibility; no pilot log is currently present under `results/`.
+These are historical pilot values only. They are superseded by the completed 112-epoch Davis experiment below and are not its final results or a claim of reproducing the paper.
 
-## 5. Full Training Status
+## 5. Current Davis Experiment Status
 
-The planned full Davis experiment is configured for up to 3,000 epochs, 50 optimizer updates per training epoch, batch size 512, learning rate 0.0005, Adam, MSE, and early-stopping patience 400. Current defaults split the 25,046-row Davis training fold into a 90% optimization subset and 10% validation subset, using seed 42. The independent test fold contains 5,010 rows.
+The Davis training run was stopped manually at epoch 112. The saved best-validation checkpoint is from epoch 91, selected by validation MSE, and is stored at `results/davis/run_112_backup/mgraphdta_best.pt`. The independent test fold was evaluated using that checkpoint.
 
-**The full 3,000-epoch experiment has not been completed.** The epoch limit is an upper bound because validation-based early stopping may halt sooner. Do not present the pilot as a full run or paper reproduction.
+| Training configuration | Value |
+| --- | ---: |
+| Learning rate | 0.0005 |
+| Batch size | 32 |
+| Maximum epochs | 150 |
+| Steps per epoch | 50 |
+| Validation fraction | 0.1 |
+| Early-stopping patience | 30 |
+| Seed | 42 |
+
+| Davis result | Value |
+| --- | ---: |
+| Best epoch | 91 |
+| Best validation MSE | 0.23236284946015257 |
+| Independent test MSE | 0.2570411052920772 |
+| Independent test RMSE | 0.5069922142322081 |
+| Independent test CI | 0.8790452402222367 |
+| Independent test `r_m^2` | 0.6817055902984536 |
+| Device | CUDA |
+
+The final `r_m^2` above uses the corrected implementation, which follows the original MGraphDTA authors' `regression/metrics.py` calculation. The earlier value 0.303710 was produced by the superseded calculation and must not be reported as the final result. Corrected evaluation metrics are recorded in `results/davis/run_112_backup/evaluation_metrics_corrected.json`.
+
+**This is not an exact reproduction of the paper's Table 3 experimental protocol.** This run used a different training and validation configuration and did not reproduce the paper's full hyperparameter optimization or repeated-experiment protocol. The results above are this project's single-run Davis evaluation, not a paper reproduction claim.
 
 ## 6. Evaluation Plan
 
-1. Keep the independent Davis test partition out of optimization, validation, checkpoint selection, and early stopping.
-2. Select the best checkpoint and stop based on validation MSE.
-3. Restore the selected checkpoint, then evaluate the independent test set for final metrics.
-4. Implement and test additional metrics, including CI, RMSE, and r_m^2, in `src/metrics.py` before reporting them. CI is not currently implemented.
-5. Record the split seed, command, environment, checkpoint, and results with each run. Treat comparison with published scores as a separate, protocol-aware analysis.
+1. The independent Davis test partition is kept out of optimization, validation, checkpoint selection, and early stopping.
+2. Validation MSE selects the best checkpoint; the epoch-91 checkpoint was restored before independent test evaluation.
+3. MSE, RMSE, CI, and corrected `r_m^2` are implemented in `src/metrics.py`; the corrected `r_m^2` follows the original authors' calculation.
+4. The current run's configuration, checkpoint, and test results are recorded above and in `results/davis/run_112_backup/evaluation_metrics_corrected.json`.
+5. Compare with published scores only with explicit consideration of the differing experimental protocols.
 
 This repository's protocol is distinct from the paper's described five-fold cross-validation over five of six partitions plus an independent test partition. The authors' released regression trainer uses prebuilt train/test datasets and evaluates its test dataset during training for checkpoint selection and early stopping. This project instead derives validation from the available training fold and keeps its independent test fold untouched until final evaluation; it does not claim exact reproduction of either procedure.
 
@@ -74,8 +96,8 @@ Grad-AAM is not implemented. Planned work is to capture activations and gradient
 ## 9. Future Milestones
 
 1. Record the pilot command and environment metadata; confirm the pilot checkpoint and result log are retained as intended.
-2. Run the planned full Davis experiment with the documented isolated train/validation/test protocol and monitor hardware/resource use.
-3. Implement and validate CI, RMSE, and r_m^2; report final independent-test results from the selected checkpoint.
+2. If a paper-level comparison is required, plan and run the paper's full hyperparameter optimization and repeated-experiment protocol, documenting the protocol separately from this completed run.
+3. Use the corrected metric implementation for future evaluations and keep results tied to their specific checkpoints and protocols.
 4. Implement and test Grad-AAM atom visualizations.
 5. Define and run any additional dataset comparisons or ablations with their split protocols documented.
 6. Update project documentation with reproducible commands and clearly labeled results without claiming paper reproduction unless protocols and evidence support it.
