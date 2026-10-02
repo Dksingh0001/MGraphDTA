@@ -4,9 +4,9 @@
 
 Original paper: **“MGraphDTA: Deep Multiscale Graph Neural Network for Explainable Drug–Target Binding Affinity Prediction”** by Ziduo Yang, Weihe Zhong, Lu Zhao, and Calvin Yu-Chian Chen, *Chemical Science* (2022), 13, 816–833. [Paper DOI](https://doi.org/10.1039/D1SC05095E).
 
-This project predicts continuous drug–target binding affinity from a drug's SMILES representation and a target protein sequence. It implements the MGraphDTA forward architecture and a Davis regression training pipeline. Grad-AAM is not implemented.
+This project predicts continuous drug–target binding affinity from a drug's SMILES representation and a target protein sequence. It implements the full MGraphDTA architecture, a Davis training pipeline, evaluation metrics, and a Grad-AAM explainability workflow.
 
-> **Current status:** The architecture and training pipeline are implemented. A 10-epoch Davis pilot has been reported; the planned full 3,000-epoch experiment has not been completed. Pilot results are not final paper-reproduction results.
+> **Current status:** The full MGraphDTA integration, training pipeline, evaluation metrics, and Grad-AAM workflow are implemented and tested. The current Davis result is a single-seed run with a 90/10 train-validation split, batch size 32, 50 optimizer steps per epoch, and a manual stop at epoch 112. It does not claim exact reproduction of the original paper’s repeated-experiment protocol.
 
 ## Project Overview
 
@@ -15,7 +15,7 @@ The forward workflow has two input branches:
 - **Drug:** SMILES → RDKit molecular graph → MGNN → 96-dimensional drug embedding.
 - **Protein:** amino-acid sequence → integer tokens → learned 128-dimensional embedding → MCNN → 96-dimensional protein embedding.
 
-The embeddings are concatenated and passed to the regression head, which returns one predicted affinity per drug–target pair. The short pilot is preliminary and does not establish paper-level performance.
+The embeddings are concatenated and passed to the regression head, which returns one predicted affinity per drug–target pair. The current project reflects the verified Davis implementation rather than an exact paper reproduction.
 
 ## Current Status
 
@@ -29,22 +29,24 @@ The embeddings are concatenated and passed to the regression head, which returns
 | MCNN protein encoder | ✅ Completed | Encoder is implemented; branch shapes, pooling, gradients, batching, and available-device tests pass. |
 | MGNN tests | ✅ Completed | `tests/test_mgnn.py` passes locally. |
 | MCNN tests | ✅ Completed | `tests/test_mcnn.py` passes locally. |
-| Full MGraphDTA integration | ✅ Completed | `src/models/mgraphdta.py` connects MGNN, MCNN, and the regression head; end-to-end tests pass on real Davis samples and batched data. |
+| Full MGraphDTA integration | ✅ Completed | `src/models/mgraphdta.py` connects MGNN, MCNN, and the regression head; end-to-end tests pass. |
 | Prediction network | ✅ Completed | `192 → 1024 → 1024 → 256 → 1`, with ReLU and dropout 0.1 after each hidden layer. |
-| End-to-end MGraphDTA tests | ✅ Completed | `tests/test_mgraphdta.py` verifies sample/batch forward passes, dimensions, finite scalar outputs, gradients, and CUDA when available. |
-| Training pipeline | ✅ Completed | Reusable optimization, validation, early stopping, best-checkpoint restoration, epoch-level MSE reporting, history/curve/metrics output, and final test evaluation are implemented. No full training or benchmark results are claimed. |
-| Training protocol tests | ✅ Completed | `tests/test_training.py` covers reproducible split indices, validation-driven checkpointing/stopping, training artifacts, test isolation, final test evaluation, and CPU/CUDA smoke paths. |
-| Davis pilot | ✅ Reported | 10 epochs; best validation MSE 0.478949 and independent test MSE 0.569563. These are pilot-only results. |
-| Full training | ⏳ Not completed | The planned run is up to 3,000 epochs; no full run or paper-reproduction result is claimed. |
-| Evaluation metrics | ⏳ Planned | `src/metrics.py` currently contains only a module description. |
-| Grad-AAM | ⏳ Planned | `src/explainability/grad_aam.py` currently contains only a module description. |
-| Experiments and ablations | ⏳ Planned | No project training experiments are implemented or reported. |
+| End-to-end MGraphDTA tests | ✅ Completed | `tests/test_mgraphdta.py` verifies forward passes, dimensions, finite outputs, gradients, and CUDA when available. |
+| Training pipeline | ✅ Completed | Includes train/validation split, optimization, validation, early stopping, best-checkpoint saving/restoration, epoch-level MSE history, training curve generation, and independent final test evaluation. |
+| Training protocol tests | ✅ Completed | `tests/test_training.py` verifies reproducible split indices, validation-driven checkpointing/stopping, test isolation, final test evaluation, and CPU/CUDA paths. |
+| Davis training (current verified run) | ✅ Completed | `python -m src.train --epochs 150 --steps-per-epoch 50 --batch-size 32 --learning-rate 0.0005 --patience 30 --validation-fraction 0.1 --seed 42 --device cuda`; the run reached epoch 112 before manual stop; best validation epoch = 91; best validation MSE = 0.23236284946015257. |
+| Independent Davis test evaluation | ✅ Completed | Using the best checkpoint from epoch 91: MSE = 0.2570411052920772, RMSE = 0.5069922142322081, CI = 0.8790452402222367, `r_m^2` = 0.6817055902984536. |
+| Evaluation metrics | ✅ Completed | `src/metrics.py` implements MSE, RMSE, CI, and the corrected `r_m^2` calculation matching the authors' definition; tests pass. |
+| Grad-AAM | ✅ Completed | `src/explainability/grad_aam.py` implements Grad-AAM on `model.drug_encoder.transition3`; tests pass. |
+| Grad-AAM visualization | ✅ Completed | A Davis visualization script is implemented; five examples were generated and verified, highlighting important drug atoms for the prediction. |
+| Experiments and ablations | ⏳ Planned | No systematic ablation study has been performed yet. |
+| Paper reproduction | ⚠️ Not claimed | The current project uses one seed, a 90/10 train-validation split, batch size 32, 50 optimizer steps per epoch, max 150 epochs, patience 30, and a manual stop at epoch 112; it does not claim exact paper reproduction. |
 
-The repository implements and tests the forward pass and training pipeline. The reported pilot is preliminary; no final benchmark or paper-reproduction result is claimed.
+The repository implements the complete forward pass, training workflow, evaluation metrics, and Grad-AAM visualization for the current Davis setup. This run is not an exact paper reproduction: the paper reports mean ± standard deviation over repeated experiments and uses its own hyperparameter optimization and cross-validation protocol.
 
 ## Architecture
 
-The complete model forward path and Davis training pipeline are implemented. Grad-AAM and broader experiments remain unimplemented.
+The complete model forward path, Davis training pipeline, evaluation metrics, and Grad-AAM workflow are implemented. The current project reflects a single-seed Davis run; broader ablations remain planned.
 
 ```mermaid
 flowchart LR
@@ -162,28 +164,32 @@ The raw Davis files and processed tables are ignored by Git. Provide `data/raw/d
 
 ## Training
 
-Run the configured full experiment from the repository root:
+Run the current verified Davis training command from the repository root:
 
 ```powershell
-python -m src.train --epochs 3000 --steps-per-epoch 50 --batch-size 512 --learning-rate 0.0005 --patience 400 --validation-fraction 0.1 --seed 42
+python -m src.train --epochs 150 --steps-per-epoch 50 --batch-size 32 --learning-rate 0.0005 --patience 30 --validation-fraction 0.1 --seed 42 --device cuda
 ```
 
-The command trains with Adam and MSE. Each reported epoch contains 50 optimizer updates. The 25,046-row Davis training fold is split into optimization and validation subsets (90%/10%); validation MSE selects the checkpoint and controls early stopping. The best checkpoint is restored before the independent 5,010-row test set is loaded for final evaluation. The test set is not used during optimization, checkpoint selection, or early stopping.
+This run uses Adam and MSE. Each epoch contains 50 optimizer updates. The 25,046-row Davis training fold is split into optimization and validation subsets (90%/10%); validation MSE selects the checkpoint and controls early stopping. The best checkpoint is restored before the independent 5,010-row test set is loaded for final evaluation. The test set is not used during optimization, checkpoint selection, or early stopping.
 
-The defaults specify **up to** 3,000 epochs, 50 updates per epoch, batch size 512, learning rate 0.0005, and patience 400. The complete 3,000-epoch experiment has **not** been completed.
+The current project uses a single seed, a 90/10 split, batch size 32, a 150-epoch cap, and patience 30. The run was manually stopped at epoch 112. This is not an exact reproduction of the original paper, which reports mean ± standard deviation over repeated experiments and uses its own hyperparameter optimization and cross-validation protocol.
 
 Each epoch reports training and validation MSE. A completed training run writes `results/davis/training_history.csv`, `results/davis/training_curve.png`, and `results/davis/final_metrics.json`; these generated outputs are ignored by Git. The JSON includes the restored best-validation checkpoint's independent test MSE after final evaluation.
 
-### 10-Epoch Pilot Results
+### Current Verified Davis Run
 
-The reported pilot completed 10 epochs and obtained:
+The verified run reached epoch 112 before manual termination and achieved:
 
-| Metric | Pilot result |
+| Metric | Verified result |
 | --- | ---: |
-| Best validation MSE | 0.478949 |
-| Independent test MSE | 0.569563 |
+| Best validation epoch | 91 |
+| Best validation MSE | 0.23236284946015257 |
+| Independent test MSE | 0.2570411052920772 |
+| Independent test RMSE | 0.5069922142322081 |
+| Independent test CI | 0.8790452402222367 |
+| Independent test `r_m^2` | 0.6817055902984536 |
 
-These are **PILOT results only**, not final benchmark results and not a reproduction of the paper's reported results. The exact pilot command and run metadata (including seed and environment) should be recorded with the run before treating it as reproducible.
+These numbers are the current verified project results for the implemented single-seed Davis protocol, not a claim that the original paper was exactly reproduced.
 
 ## Tests
 
@@ -260,12 +266,11 @@ MGraphDTA/
 
 ## Future Work
 
-- Complete and record the planned full Davis training run.
-- Implement and validate additional evaluation metrics, including CI, RMSE, and $r_m^2$; `src/metrics.py` currently contains no metric functions.
-- Implement Grad-AAM atom-level explanations; `src/explainability/grad_aam.py` is currently a placeholder.
-- Plan and run further experiments only after the Davis training and evaluation protocol is documented.
+- Run systematic ablation experiments and document the resulting protocol and comparisons.
+- Extend the current single-seed Davis setup with additional protocol checks and benchmark reporting as needed.
+- Keep the training and evaluation protocol aligned with any future paper-level reproduction effort.
 
-This is an academic implementation in progress, not a claim of a completed paper reproduction. The full experiment and paper-level comparisons remain outstanding.
+The current project is a verified single-seed Davis implementation, not an exact reproduction of the original paper’s repeated-experiment protocol or reported mean ± standard deviation results.
 
 ## References
 
