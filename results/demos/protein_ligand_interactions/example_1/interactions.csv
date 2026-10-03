@@ -1,0 +1,19 @@
+interaction_type,protein_chain,residue_number,residue_name,protein_atom,ligand_atom,distance_angstrom,evidence
+hydrophobic_contact,D,248,LEU,CD1,C6,3.86,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+pi_pi,D,253,TYR,CG/CD1/CD2/CE1/CE2/CZ,C7,4.91,Aromatic ring centroid separation ≤5.5 Å; plane angle 79° (T-shaped)
+hydrophobic_contact,D,256,VAL,CG1,C20,3.92,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,D,269,ALA,CB,C20,3.89,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,D,270,VAL,CA,C20,4.07,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+pi_cation,D,271,LYS,NZ,C14,5.55,Arg/Lys cation to ligand aromatic centroid ≤6.0 Å
+hydrophobic_contact,D,290,MET,CE,C17,3.58,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,D,293,ILE,CD1,C27,3.98,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,D,313,ILE,CG2,C18,3.67,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrogen_bond,D,315,THR,OG1,N13,3.00,Ligand donor → protein acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 127°
+hydrophobic_contact,D,317,PHE,CE1,C1,4.00,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+pi_pi,D,317,PHE,CG/CD1/CD2/CE1/CE2/CZ,C1,4.73,Aromatic ring centroid separation ≤5.5 Å; plane angle 16° (parallel)
+hydrogen_bond,D,318,MET,N,N3,2.52,Protein donor → ligand acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 120°
+hydrogen_bond,D,360,ILE,O,N51,2.61,Ligand donor → protein acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 131°
+hydrophobic_contact,D,370,LEU,CD2,C5,3.76,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,D,380,ALA,CA,C25,4.01,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrogen_bond,D,381,ASP,N,O29,3.18,Protein donor → ligand acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 124°
+hydrophobic_contact,D,382,PHE,CE2,C12,3.99,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue

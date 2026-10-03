@@ -1,0 +1,6 @@
+example,pdb_id,protein,ligand,experimental_method,resolution,chain,number_of_interactions,diagram_path
+example_1,2HYY,ABL1 (Abl tyrosine kinase domain),Imatinib (STI571),X-ray diffraction,2.40 Å,D,18,example_1/interaction_diagram.png
+example_2,2ITZ,"EGFR kinase domain, L858R",Gefitinib (Iressa),X-ray diffraction,2.80 Å,A,9,example_2/interaction_diagram.png
+example_3,1M17,EGFR tyrosine kinase domain,Erlotinib (Tarceva),X-ray diffraction,2.60 Å,A,6,example_3/interaction_diagram.png
+example_4,1HSG,HIV-1 protease,"L-735,524 (indinavir)",X-ray diffraction,2.00 Å,"A,B",23,example_4/interaction_diagram.png
+example_5,1STP,Streptavidin,Biotin,X-ray diffraction,2.60 Å,A,8,example_5/interaction_diagram.png

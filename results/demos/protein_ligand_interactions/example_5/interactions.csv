@@ -1,0 +1,9 @@
+interaction_type,protein_chain,residue_number,residue_name,protein_atom,ligand_atom,distance_angstrom,evidence
+hydrogen_bond,A,23,ASN,ND2,O3,2.99,Protein donor → ligand acceptor; D···A ≤3.5 Å; donor antecedent unavailable
+hydrogen_bond,A,43,TYR,OH,O3,2.58,Protein donor → ligand acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 116°
+hydrogen_bond,A,45,SER,OG,N2,3.04,Ligand donor → protein acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 126°
+hydrophobic_contact,A,47,VAL,CG2,C7,4.20,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,A,79,TRP,CZ2,C8,3.42,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrogen_bond,A,88,SER,OG,O11,2.69,Protein donor → ligand acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 123°
+hydrophobic_contact,A,110,LEU,CD2,C9,3.84,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrogen_bond,A,128,ASP,OD2,N1,2.78,Ligand donor → protein acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 127°

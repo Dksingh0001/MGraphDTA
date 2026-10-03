@@ -1,0 +1,24 @@
+interaction_type,protein_chain,residue_number,residue_name,protein_atom,ligand_atom,distance_angstrom,evidence
+pi_cation,A,8,ARG,NH1,C15,4.84,Arg/Lys cation to ligand aromatic centroid ≤6.0 Å
+pi_cation,A,8,ARG,NH2,C15,4.63,Arg/Lys cation to ligand aromatic centroid ≤6.0 Å
+pi_cation,A,8,ARG,NE,C15,5.37,Arg/Lys cation to ligand aromatic centroid ≤6.0 Å
+hydrophobic_contact,A,23,LEU,CD2,C16,3.85,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrogen_bond,A,25,ASP,OD1,O2,2.77,Ligand donor → protein acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 141°
+hydrophobic_contact,A,28,ALA,CB,C6,3.81,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,A,32,VAL,CG2,C6,3.77,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,A,47,ILE,CD1,C7,3.73,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,A,81,PRO,CG,C19,3.92,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,A,82,VAL,CG1,C20,3.63,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,A,84,ILE,CD1,C14,3.93,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrogen_bond,B,8,ARG,NH2,N5,3.46,Protein donor → ligand acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 117°
+pi_cation,B,8,ARG,NH1,C32,5.24,Arg/Lys cation to ligand aromatic centroid ≤6.0 Å
+pi_cation,B,8,ARG,NH2,C32,4.63,Arg/Lys cation to ligand aromatic centroid ≤6.0 Å
+hydrogen_bond,B,25,ASP,OD1,O2,2.63,Ligand donor → protein acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 142°
+hydrogen_bond,B,27,GLY,O,N4,3.03,Ligand donor → protein acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 111°
+hydrogen_bond,B,27,GLY,O,O4,3.16,Ligand donor → protein acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 128°
+hydrophobic_contact,B,28,ALA,CB,C29,3.66,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrogen_bond,B,29,ASP,N,O4,3.23,Protein donor → ligand acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 124°
+hydrophobic_contact,B,32,VAL,CG2,C27,3.32,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,B,47,ILE,CD1,C27,3.81,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,B,50,ILE,CG1,C7,3.78,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,B,81,PRO,CB,C32,3.71,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue

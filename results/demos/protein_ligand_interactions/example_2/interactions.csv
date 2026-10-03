@@ -1,0 +1,10 @@
+interaction_type,protein_chain,residue_number,residue_name,protein_atom,ligand_atom,distance_angstrom,evidence
+hydrophobic_contact,A,718,LEU,CD1,CAH,4.03,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,A,726,VAL,CG1,CAG,4.17,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,A,743,ALA,CB,C5,4.15,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+pi_cation,A,745,LYS,NZ,CAY,4.34,Arg/Lys cation to ligand aromatic centroid ≤6.0 Å
+halogen_bond,A,788,LEU,O,CL,3.77,C–X···A distance ≤3.8 Å; angle ≥150° (observed 152°)
+hydrophobic_contact,A,792,LEU,CD1,CAH,3.94,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrogen_bond,A,793,MET,N,N3,2.67,Protein donor → ligand acceptor; D···A ≤3.5 Å; heavy-atom surrogate angle 113°
+hydrophobic_contact,A,793,MET,CA,CAH,4.12,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
+hydrophobic_contact,A,844,LEU,CD1,C5,4.16,Nonpolar side-chain C···C contact ≤4.2 Å; one minimum-distance representative per residue
