@@ -47,13 +47,15 @@ class GradAAM:
             output: Tensor,
         ) -> None:
             if not isinstance(output, Tensor):
-                raise TypeError("transition3 must return an activation Tensor")
+                raise TypeError("Final MGNN transition must return an activation Tensor")
             activations.append(output)
 
         was_training = self.model.training
-        handle = self.model.drug_encoder.transition3.register_forward_hook(
-            capture_activation
-        )
+        drug_encoder = self.model.drug_encoder
+        final_transition = getattr(drug_encoder, "final_transition", None)
+        if final_transition is None:
+            final_transition = drug_encoder.transition3
+        handle = final_transition.register_forward_hook(capture_activation)
         try:
             self.model.eval()
             prediction = self.model(data)
@@ -61,17 +63,17 @@ class GradAAM:
                 raise ValueError("Grad-AAM requires exactly one drug-protein pair")
             if len(activations) != 1:
                 raise RuntimeError(
-                    "Expected one activation from drug_encoder.transition3"
+                    "Expected one activation from the final MGNN transition"
                 )
 
             activation = activations[0]
             if activation.ndim != 2:
                 raise ValueError(
-                    "transition3 activation must have shape [num_atoms, channels]"
+                    "Final MGNN transition activation must have shape [num_atoms, channels]"
                 )
             if activation.shape[0] != data.x.shape[0]:
                 raise ValueError(
-                    "transition3 node count does not match input atom count"
+                    "Final MGNN transition node count does not match input atom count"
                 )
 
             gradient = torch.autograd.grad(prediction.sum(), activation)[0]

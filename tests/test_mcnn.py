@@ -140,6 +140,29 @@ def test_backward_produces_gradients():
     assert model.linear.weight.grad.abs().sum() > 0
 
 
+def test_configurable_branch_counts_keep_finite_96d_outputs():
+    tokens = torch.arange(2 * MAX_PROTEIN_LEN).reshape(2, -1) % 26
+    for branch_count in (2, 4):
+        model = MCNN(branch_count=branch_count).eval()
+        with torch.inference_mode():
+            output = model(tokens)
+        assert model.branch_count == branch_count
+        assert len(model.block_list) == branch_count
+        assert [len(branch.conv_layers) for branch in model.block_list] == list(
+            range(1, branch_count + 1)
+        )
+        assert model.linear.in_features == branch_count * 96
+        assert output.shape == (2, 96)
+        assert torch.isfinite(output).all()
+
+
+def test_default_branch_state_dict_shapes_remain_compatible():
+    model = MCNN()
+    assert model.branch_count == 3
+    assert model.linear.weight.shape == (96, 288)
+    assert "block_list.2.conv_layers.conv_layer2.conv.weight" in model.state_dict()
+
+
 def test_cuda_forward_when_available():
     if not torch.cuda.is_available():
         print("Skipping MCNN CUDA test (CUDA is unavailable).")

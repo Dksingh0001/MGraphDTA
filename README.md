@@ -2,7 +2,7 @@
 
 **Drug–target binding affinity prediction with multiscale graph and convolutional neural networks.**
 
-Original paper: **“MGraphDTA: Deep Multiscale Graph Neural Network for Explainable Drug–Target Binding Affinity Prediction”** by Ziduo Yang, Weihe Zhong, Lu Zhao, and Calvin Yu-Chian Chen, *Chemical Science* (2022), 13, 816–833. [Paper DOI](https://doi.org/10.1039/D1SC05095E).
+Original paper: **“MGraphDTA: Deep Multiscale Graph Neural Network for Explainable Drug–Target Binding Affinity Prediction”** by Ziduo Yang, Weihe Zhong, Lu Zhao, and Calvin Yu-Chian Chen, *Chemical Science* (2022), 13, 816–833. [Paper DOI](https://doi.org/10.1039/D1SC05180F).
 
 This project predicts continuous drug–target binding affinity from a drug's SMILES representation and a target protein sequence. It implements the full MGraphDTA architecture, a Davis training pipeline, evaluation metrics, and a Grad-AAM explainability workflow.
 
@@ -22,27 +22,28 @@ The embeddings are concatenated and passed to the regression head, which returns
 | Component | Status | Repository evidence |
 | --- | --- | --- |
 | Project setup | ✅ Completed | Python dependencies and environment-check script are present. |
-| Davis preprocessing | ✅ Completed | Davis tables and pKd conversion are implemented; the local dataset verification script passes. Dataset files are not committed. |
+| Davis preprocessing | ✅ Implemented | Davis tables and pKd conversion are implemented; `tests/test_davis_dataset.py` requires local data. Dataset files are not committed. |
 | Molecular graph construction | ✅ Completed | RDKit parsing, 22-dimensional atom features, and bidirected `edge_index` construction are implemented and passed to MGNN through PyG data. |
-| 22-dimensional atom features | ✅ Completed | Feature extraction and tests are implemented; tests pass. |
-| MGNN drug encoder | ✅ Completed | Encoder is implemented; shape, depth-accounting, batching, and forward tests pass. |
-| MCNN protein encoder | ✅ Completed | Encoder is implemented; branch shapes, pooling, gradients, batching, and available-device tests pass. |
-| MGNN tests | ✅ Completed | `tests/test_mgnn.py` passes locally. |
-| MCNN tests | ✅ Completed | `tests/test_mcnn.py` passes locally. |
-| Full MGraphDTA integration | ✅ Completed | `src/models/mgraphdta.py` connects MGNN, MCNN, and the regression head; end-to-end tests pass. |
+| 22-dimensional atom features | ✅ Implemented | Feature extraction is in `src/preprocessing.py`. |
+| MGNN drug encoder | ✅ Implemented | Encoder and architecture checks are in `src/models/mgnn.py` and `tests/test_mgnn.py`. |
+| MCNN protein encoder | ✅ Implemented | Encoder and architecture checks are in `src/models/mcnn.py` and `tests/test_mcnn.py`. |
+| Test modules | Present | Focused checks are documented in [test instructions](#tests); no full-suite pass is claimed here. |
+| Full MGraphDTA integration | ✅ Implemented | `src/models/mgraphdta.py` connects MGNN, MCNN, and the regression head. |
 | Prediction network | ✅ Completed | `192 → 1024 → 1024 → 256 → 1`, with ReLU and dropout 0.1 after each hidden layer. |
-| End-to-end MGraphDTA tests | ✅ Completed | `tests/test_mgraphdta.py` verifies forward passes, dimensions, finite outputs, gradients, and CUDA when available. |
+| End-to-end test module | Present | `tests/test_mgraphdta.py` covers forward passes, dimensions, finite outputs, gradients, and CUDA when available. |
 | Training pipeline | ✅ Completed | Includes train/validation split, optimization, validation, early stopping, best-checkpoint saving/restoration, epoch-level MSE history, training curve generation, and independent final test evaluation. |
-| Training protocol tests | ✅ Completed | `tests/test_training.py` verifies reproducible split indices, validation-driven checkpointing/stopping, test isolation, final test evaluation, and CPU/CUDA paths. |
-| Davis training (current verified run) | ✅ Completed | `python -m src.train --epochs 150 --steps-per-epoch 50 --batch-size 32 --learning-rate 0.0005 --patience 30 --validation-fraction 0.1 --seed 42 --device cuda`; the run reached epoch 112 before manual stop; best validation epoch = 91; best validation MSE = 0.23236284946015257. |
-| Independent Davis test evaluation | ✅ Completed | Using the best checkpoint from epoch 91: MSE = 0.2570411052920772, RMSE = 0.5069922142322081, CI = 0.8790452402222367, `r_m^2` = 0.6817055902984536. |
-| Evaluation metrics | ✅ Completed | `src/metrics.py` implements MSE, RMSE, CI, and the corrected `r_m^2` calculation matching the authors' definition; tests pass. |
-| Grad-AAM | ✅ Completed | `src/explainability/grad_aam.py` implements Grad-AAM on `model.drug_encoder.transition3`; tests pass. |
-| Grad-AAM visualization | ✅ Completed | A Davis visualization script is implemented; five examples were generated and verified, highlighting important drug atoms for the prediction. |
+| Training protocol tests | Implemented | `tests/test_training.py` covers split and checkpoint behavior; the complete test suite has not been verified in this README update. |
+| Davis baseline | ✅ Initial experiment available | Single-seed run reached epoch 112 before manual stop; best validation epoch = 91 and best validation MSE = 0.23236284946015257. See [corrected metrics](results/davis/run_112_backup/evaluation_metrics_corrected.json) and [training curve](results/davis/run_112_backup/training_curve_112_epochs.png). |
+| Independent Davis test evaluation | ✅ Completed | Using the best checkpoint from epoch 91: MSE = 0.2570411, RMSE = 0.5069922, CI = 0.8790452, `r_m^2` = 0.6817056. |
+| Evaluation metrics | ✅ Implemented | `src/metrics.py` implements MSE, RMSE, CI, and corrected `r_m^2`. |
+| Grad-AAM implementation | ✅ Implemented | `src/explainability/grad_aam.py` computes atom-level model attributions; this does not establish physical binding contacts. |
+| Grad-AAM visualization | ✅ Completed | Five Davis examples were generated. The highlighted atoms are model-derived attributions and have not been scientifically validated as binding contacts. |
+| Separate protein-GNN experiment | ✅ Completed experiment | Results are stored in `results/davis/protein_gnn_experiment/` and are kept separate from the primary MGraphDTA result. |
+| Additional seed artifacts | ⚠️ Status limited | Seed results and checkpoint reevaluations exist, but process manifests conflict. They are not treated as a completed multi-seed training experiment; see [validation report](MULTISEED_VALIDATION_REPORT.md) and [reevaluation report](MULTISEED_REEVALUATION_REPORT.md). |
 | Experiments and ablations | ⏳ Planned | No systematic ablation study has been performed yet. |
-| Paper reproduction | ⚠️ Not claimed | The current project uses one seed, a 90/10 train-validation split, batch size 32, 50 optimizer steps per epoch, max 150 epochs, patience 30, and a manual stop at epoch 112; it does not claim exact paper reproduction. |
+| Paper-protocol experiment | ⏳ Unfinished | Five-fold Optuna tuning and final protocol runs are not complete. The Davis baseline is an initial experiment, not a paper reproduction. |
 
-The repository implements the complete forward pass, training workflow, evaluation metrics, and Grad-AAM visualization for the current Davis setup. This run is not an exact paper reproduction: the paper reports mean ± standard deviation over repeated experiments and uses its own hyperparameter optimization and cross-validation protocol.
+The repository implements the complete forward pass, training workflow, evaluation metrics, and Grad-AAM visualization for the current Davis setup. Grad-AAM implementation and example generation are complete, but its scientific interpretation as physical binding evidence is not validated. This run is not an exact paper reproduction: the paper reports mean ± standard deviation over repeated experiments and uses its own hyperparameter optimization and cross-validation protocol.
 
 ## Architecture
 
@@ -164,7 +165,7 @@ The raw Davis files and processed tables are ignored by Git. Provide `data/raw/d
 
 ## Training
 
-Run the current verified Davis training command from the repository root:
+The following command records the initial baseline configuration and starts a new training run if executed:
 
 ```powershell
 python -m src.train --epochs 150 --steps-per-epoch 50 --batch-size 32 --learning-rate 0.0005 --patience 30 --validation-fraction 0.1 --seed 42 --device cuda
@@ -172,28 +173,34 @@ python -m src.train --epochs 150 --steps-per-epoch 50 --batch-size 32 --learning
 
 This run uses Adam and MSE. Each epoch contains 50 optimizer updates. The 25,046-row Davis training fold is split into optimization and validation subsets (90%/10%); validation MSE selects the checkpoint and controls early stopping. The best checkpoint is restored before the independent 5,010-row test set is loaded for final evaluation. The test set is not used during optimization, checkpoint selection, or early stopping.
 
-The current project uses a single seed, a 90/10 split, batch size 32, a 150-epoch cap, and patience 30. The run was manually stopped at epoch 112. This is not an exact reproduction of the original paper, which reports mean ± standard deviation over repeated experiments and uses its own hyperparameter optimization and cross-validation protocol.
+The initial baseline uses a single seed, a 90/10 split, batch size 32, a 150-epoch cap, and patience 30. It ended manually at epoch 112; early stopping did not trigger (patience counter 21 of 30). Its best validation MSE was 0.23236284946015257 at epoch 91. This is an initial project experiment, not a completed paper-protocol result. Five-fold Optuna tuning and final paper-protocol runs remain unfinished.
 
-Each epoch reports training and validation MSE. A completed training run writes `results/davis/training_history.csv`, `results/davis/training_curve.png`, and `results/davis/final_metrics.json`; these generated outputs are ignored by Git. The JSON includes the restored best-validation checkpoint's independent test MSE after final evaluation.
+The reference archive for this initial run is [`results/davis/run_112_backup/`](results/davis/run_112_backup/). Its [combined results figure](results/davis/run_112_backup/initial_davis_results_figure.png), [corrected evaluation](results/davis/run_112_backup/evaluation_metrics_corrected.json), and [training curve](results/davis/run_112_backup/training_curve_112_epochs.png) are available there. Root-level [`final_metrics.json`](results/davis/final_metrics.json) and [`training_curve.png`](results/davis/training_curve.png) are also present. These generated outputs are ignored by Git. The one-epoch CPU pilot is preserved in [`historical_one_epoch_cpu_final_metrics.json`](results/davis/historical_one_epoch_cpu_final_metrics.json).
 
-### Current Verified Davis Run
+The separate sequence-adjacency protein-GNN experiment has its own checkpoint, history, curve, and metrics under `results/davis/protein_gnn_experiment/`. It is an experimental baseline and its scores are not the primary MGraphDTA results.
 
-The verified run reached epoch 112 before manual termination and achieved:
+### Existing Additional Seed Results
+
+Seed-specific results and aggregate reevaluations exist under `results/davis/`. Their process records are inconsistent, and the validated aggregate reflects checkpoint reevaluation rather than proof of a clean, completed multi-seed training campaign. See the [validation report](MULTISEED_VALIDATION_REPORT.md) and [reevaluation report](MULTISEED_REEVALUATION_REPORT.md); these artifacts are not the final paper-protocol experiment.
+
+### Initial Davis Result
+
+The initial Davis run reached epoch 112 before manual termination and achieved:
 
 | Metric | Verified result |
 | --- | ---: |
 | Best validation epoch | 91 |
 | Best validation MSE | 0.23236284946015257 |
-| Independent test MSE | 0.2570411052920772 |
-| Independent test RMSE | 0.5069922142322081 |
-| Independent test CI | 0.8790452402222367 |
-| Independent test `r_m^2` | 0.6817055902984536 |
+| Independent test MSE | 0.2570411 |
+| Independent test RMSE | 0.5069922 |
+| Independent test CI | 0.8790452 |
+| Independent test `r_m^2` | 0.6817056 |
 
-These numbers are the current verified project results for the implemented single-seed Davis protocol, not a claim that the original paper was exactly reproduced.
+These numbers describe the initial single-seed Davis experiment, not an exact reproduction of the paper. They are recorded in [`evaluation_metrics_corrected.json`](results/davis/run_112_backup/evaluation_metrics_corrected.json). The older `evaluation_metrics.json` is a historical calculation and should not be used for the current `r_m^2` value.
 
 ## Tests
 
-The test suite covers:
+The repository includes these test modules. Their presence does not mean the full suite has passed; some tests require local Davis data or CUDA. The latest focused protocol/aggregation run passed 37 tests.
 
 | Test | What it verifies |
 | --- | --- |
@@ -202,23 +209,22 @@ The test suite covers:
 | `tests/test_mgnn.py` | MGNN depth accounting, stage widths, individual and batched forward passes, output dimensions, finite values, and CUDA when available. |
 | `tests/test_mcnn.py` | MCNN embedding and branch tensor shapes, pooling and fusion dimensions, preprocessing lengths, gradient flow, batch processing, and CUDA when available. |
 | `tests/test_mgraphdta.py` | End-to-end forward pass for one and batched Davis samples, encoder/fusion dimensions, scalar output, finite values, gradients, and CUDA when available. |
-| `tests/test_training.py` | Train/validation partition determinism and exclusivity, validation-based checkpoint/early stopping, training history/curve/metrics outputs, test isolation/final evaluation order, and CPU/CUDA smoke tests. |
+| `tests/test_training.py` | Seeded split/model/loader behavior, deterministic settings, run-specific path isolation, validation checkpointing, test isolation, artifact outputs, and CPU/CUDA smoke tests. |
+| `tests/test_multiseed_aggregation.py` | Per-seed status validation, incomplete-run reporting, baseline exclusion, and sample-statistic aggregation. |
+| `tests/test_paper_protocol.py` | Paper-protocol configuration and objective-isolation checks. |
+| `tests/test_davis_scaled_dataset.py`, `tests/test_davis_scaling_experiment.py` | Scaled dataset and scaling comparison checks. |
+| `tests/test_grad_aam.py` | Grad-AAM attribution and output checks. |
 
-Run the scripts from the repository root in PowerShell:
+Run the focused protocol and aggregation tests from the repository root in PowerShell:
 
 ```powershell
-.\.venv\Scripts\python.exe tests\test_atom_features.py
-.\.venv\Scripts\python.exe tests\test_davis_dataset.py
-.\.venv\Scripts\python.exe tests\test_mgnn.py
-.\.venv\Scripts\python.exe tests\test_mcnn.py
-.\.venv\Scripts\python.exe tests\test_mgraphdta.py
+.\.venv\Scripts\python.exe -m pytest -p no:cacheprovider tests\test_paper_protocol.py tests\test_multiseed_aggregation.py -q
 ```
 
-The training tests use pytest-style test functions. Install pytest if it is not already available, then run:
+To run the full suite when local Davis data and the desired device are available:
 
 ```powershell
-python -m pip install pytest
-python -m pytest tests\test_training.py
+.\.venv\Scripts\python.exe -m pytest -p no:cacheprovider -q
 ```
 
 Davis tests require the local data files. CUDA checks run only when the selected PyTorch environment can access CUDA.
@@ -274,5 +280,7 @@ The current project is a verified single-seed Davis implementation, not an exact
 
 ## References
 
-- Yang, Z., Zhong, W., Zhao, L., and Chen, C. Y.-C. “MGraphDTA: Deep Multiscale Graph Neural Network for Explainable Drug–Target Binding Affinity Prediction.” *Chemical Science*, 2022, 13, 816–833. [Paper](https://doi.org/10.1039/D1SC05095E).
+- Yang, Z., Zhong, W., Zhao, L., and Chen, C. Y.-C. “MGraphDTA: Deep Multiscale Graph Neural Network for Explainable Drug–Target Binding Affinity Prediction.” *Chemical Science*, 2022, 13, 816–833. [Paper](https://doi.org/10.1039/D1SC05180F).
 - Authors' released implementation: [guaguabujianle/MGraphDTA](https://github.com/guaguabujianle/MGraphDTA).
+
+The pinned author-code snapshots used for the audits are Git submodules under `references/mgraphdta_official/`. After cloning this project, initialize them with `git submodule update --init --recursive`.

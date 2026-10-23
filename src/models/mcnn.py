@@ -69,10 +69,23 @@ class StackCNN(nn.Module):
 
 
 class MCNN(nn.Module):
-    """Encode padded protein token batches as 96-dimensional vectors."""
+    """Encode padded protein tokens as a 96-dimensional vector.
 
-    def __init__(self, vocab_size: int = PROTEIN_VOCAB_SIZE) -> None:
+    ``branch_count`` selects the number of stacked-convolution scales. Each
+    branch adds one width-3 convolution, so its receptive field is
+    ``2 * branch_index + 3``. The projection keeps the output dimension fixed.
+    """
+
+    def __init__(
+        self,
+        vocab_size: int = PROTEIN_VOCAB_SIZE,
+        branch_count: int = MCNN_BRANCH_COUNT,
+    ) -> None:
         super().__init__()
+        if branch_count < 1:
+            raise ValueError("branch_count must be positive")
+        self.branch_count = int(branch_count)
+        self.output_dim = MCNN_BRANCH_CHANNELS
         self.embed = nn.Embedding(
             vocab_size, PROTEIN_EMBEDDING_DIM, padding_idx=0
         )
@@ -82,12 +95,12 @@ class MCNN(nn.Module):
                     layer_num=branch_idx + 1,
                     in_channels=PROTEIN_EMBEDDING_DIM,
                 )
-                for branch_idx in range(MCNN_BRANCH_COUNT)
+                for branch_idx in range(self.branch_count)
             ]
         )
         self.linear = nn.Linear(
-            MCNN_BRANCH_COUNT * MCNN_BRANCH_CHANNELS,
-            MCNN_BRANCH_CHANNELS,
+            self.branch_count * MCNN_BRANCH_CHANNELS,
+            self.output_dim,
         )
 
     def forward(self, tokens: Tensor) -> Tensor:

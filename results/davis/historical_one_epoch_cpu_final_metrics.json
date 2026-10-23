@@ -1,0 +1,20 @@
+{
+  "dataset": "davis",
+  "best_epoch": 1,
+  "best_validation_mse": 25.95255413550341,
+  "final_training_mse": 30.627056121826172,
+  "final_validation_mse": 25.95255413550341,
+  "independent_test_mse": 26.251619822488813,
+  "test_mse": 26.251620020400704,
+  "test_rmse": 5.123633478343343,
+  "test_ci": 0.4997061766312634,
+  "test_r_m2": 0.0035094798336378044,
+  "epochs_completed": 1,
+  "stopped_early": false,
+  "patience": 2,
+  "learning_rate": 0.0005,
+  "batch_size": 32,
+  "steps_per_epoch": 1,
+  "seed": 42,
+  "device": "cpu"
+}

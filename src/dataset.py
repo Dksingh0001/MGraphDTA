@@ -14,6 +14,7 @@ Transforms affinity:
 import os
 import json
 import pickle
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 import numpy as np
 import pandas as pd
@@ -26,6 +27,7 @@ from src.preprocessing import (
     extract_graph_structure,
     preprocess_protein
 )
+from src.scaled_features import load_scaled_feature_bundle, sha256_file
 
 
 def load_raw_davis_data(raw_dir: str = "data/raw/davis") -> Dict[str, Any]:
@@ -157,18 +159,36 @@ class DavisDataset(Dataset):
         self,
         split: str = "all",
         raw_dir: str = "data/raw/davis",
-        processed_dir: str = "data/processed/davis"
+        processed_dir: str = "data/processed/davis",
+        atom_features_dir: Optional[str] = None,
     ):
         super().__init__()
         self.processed_dir = processed_dir
         csv_file = os.path.join(processed_dir, f"davis_{split}.csv")
         
         if not os.path.exists(csv_file):
+            if atom_features_dir is not None:
+                raise FileNotFoundError(
+                    f"Scaled-feature opt-in requires an existing versioned split table: {csv_file}"
+                )
             print(f"Processed table {csv_file} not found. Generating from raw data...")
             tables = prepare_davis_tables(raw_dir=raw_dir, processed_dir=processed_dir)
             self.df = tables[split]
         else:
             self.df = pd.read_csv(csv_file)
+        self.atom_features_dir = atom_features_dir
+        self._scaled_features = None
+        self._scaled_feature_records = None
+        if atom_features_dir is not None:
+            self._scaled_features, feature_manifest = load_scaled_feature_bundle(atom_features_dir)
+            expected_table = feature_manifest.get("files", {}).get(f"davis_{split}.csv", {}).get("sha256")
+            if not expected_table or sha256_file(Path(csv_file)) != expected_table:
+                raise ValueError(
+                    f"Davis {split} table does not match the validated scaled-feature dataset manifest"
+                )
+            self._scaled_feature_records = {
+                str(record["drug_id"]): record for record in feature_manifest["ligands"]
+            }
 
     def __len__(self) -> int:
         return len(self.df)
@@ -176,12 +196,27 @@ class DavisDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         row = self.df.iloc[idx]
         smiles = row["compound_iso_smiles"]
+        drug_id = str(row["drug_id"])
         sequence = row["target_sequence"]
         affinity = float(row["affinity"])
 
         # 1. Process molecule
         mol = smiles_to_mol(smiles)
         graph_info = extract_graph_structure(mol)
+        if self._scaled_features is not None:
+            if drug_id not in self._scaled_features or drug_id not in self._scaled_feature_records:
+                raise ValueError(f"No scaled atom features found for Davis drug ID {drug_id}")
+            record = self._scaled_feature_records[drug_id]
+            if record.get("smiles") != smiles:
+                raise ValueError(f"SMILES/order provenance mismatch for Davis drug ID {drug_id}")
+            scaled_x = self._scaled_features[drug_id]
+            if scaled_x.shape[0] != graph_info["num_atoms"] or scaled_x.shape[1] != graph_info["x"].shape[1]:
+                raise ValueError(
+                    f"Scaled feature shape {tuple(scaled_x.shape)} does not match graph for drug ID {drug_id}"
+                )
+            if not torch.isfinite(scaled_x).all():
+                raise ValueError(f"Non-finite scaled atom features for Davis drug ID {drug_id}")
+            graph_info["x"] = scaled_x.clone()
 
         # 2. Process protein
         protein_tensor, orig_prot_len = preprocess_protein(sequence, max_length=1200)
@@ -196,6 +231,7 @@ class DavisDataset(Dataset):
 
         return {
             "sample_index": idx,
+            "drug_id": drug_id,
             "drug_smiles": smiles,
             "num_atoms": graph_info["num_atoms"],
             "num_bonds": graph_info["num_bonds"],

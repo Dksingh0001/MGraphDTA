@@ -34,3 +34,24 @@ dist/
 
 # Research paper
 bio paper.pdf
+
+# Reference source data and downloaded dataset archives (keep local)
+references/mgraphdta_official/MGraphDTA_Data.zip
+references/mgraphdta_official/davis_*.txt
+
+# Generated LaTeX build products and duplicate archive
+report/main.log
+report.zip
+texput.log
+
+# Publish only the small, cited Davis summary artifacts linked from README.
+!results/davis/
+results/davis/*
+!results/davis/final_metrics.json
+!results/davis/historical_one_epoch_cpu_final_metrics.json
+!results/davis/run_112_backup/
+results/davis/run_112_backup/*
+!results/davis/run_112_backup/evaluation_metrics_corrected.json
+!results/davis/run_112_backup/training_history.csv
+!results/davis/run_112_backup/training_curve_112_epochs.png
+!results/davis/run_112_backup/initial_davis_results_figure.png

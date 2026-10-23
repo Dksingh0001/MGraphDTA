@@ -4,7 +4,9 @@
 import argparse
 import csv
 import json
+import os
 import random
+import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Optional, Union
 
@@ -30,6 +32,11 @@ DEFAULT_STEPS_PER_EPOCH = 50
 DEFAULT_PATIENCE = 400
 DEFAULT_VALIDATION_FRACTION = 0.1
 DEFAULT_SEED = 42
+DEFAULT_CHECKPOINT_PATH = Path("checkpoints/mgraphdta_best.pt")
+DEFAULT_TRAINING_HISTORY_PATH = Path("results/davis/training_history.csv")
+DEFAULT_TRAINING_CURVE_PATH = Path("results/davis/training_curve.png")
+DEFAULT_FINAL_METRICS_PATH = Path("results/davis/final_metrics.json")
+_CUDA_PREINITIALIZED_WARNING_EMITTED = False
 DeviceArg = Optional[Union[str, torch.device]]
 
 
@@ -65,13 +72,41 @@ def resolve_device(device: DeviceArg = None) -> torch.device:
     return resolved
 
 
-def set_random_seed(seed: int) -> None:
-    """Seed Python, NumPy, PyTorch, and available CUDA generators."""
+def configure_deterministic_execution(enabled: bool = True) -> None:
+    """Configure deterministic PyTorch behavior where supported.
+
+    PyTorch raises when an operation has no deterministic implementation. This
+    function does not silently fall back to nondeterministic behavior.
+    """
+    global _CUDA_PREINITIALIZED_WARNING_EMITTED
+    if enabled and torch.cuda.is_available():
+        if not torch.cuda.is_initialized():
+            os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+        elif (
+            os.environ.get("CUBLAS_WORKSPACE_CONFIG") not in {":16:8", ":4096:8"}
+            and not _CUDA_PREINITIALIZED_WARNING_EMITTED
+        ):
+            warnings.warn(
+                "CUDA was initialized before deterministic cuBLAS configuration; "
+                "bitwise repeatability may not be available in this process.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            _CUDA_PREINITIALIZED_WARNING_EMITTED = True
+    torch.use_deterministic_algorithms(enabled)
+    if hasattr(torch.backends, "cudnn"):
+        torch.backends.cudnn.deterministic = enabled
+        torch.backends.cudnn.benchmark = False
+
+
+def set_random_seed(seed: int, *, deterministic: bool = True) -> None:
+    """Seed Python, NumPy, PyTorch, CUDA, and deterministic backend settings."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+    configure_deterministic_execution(deterministic)
 
 
 def make_dataloader(
@@ -79,6 +114,7 @@ def make_dataloader(
     batch_size: int = DEFAULT_BATCH_SIZE,
     shuffle: bool = False,
     num_workers: int = 0,
+    generator: Optional[torch.Generator] = None,
 ) -> DataLoader:
     """Build a PyG loader with the requested batch size."""
     if batch_size < 1:
@@ -90,7 +126,56 @@ def make_dataloader(
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
+        generator=generator,
     )
+
+
+def resolve_run_paths(
+    run_dir: Optional[Union[str, Path]] = None,
+    checkpoint_path: Optional[Union[str, Path]] = None,
+) -> Dict[str, Path]:
+    """Resolve artifact paths while retaining legacy defaults without run_dir."""
+    if run_dir is None:
+        return {
+            "checkpoint": Path(checkpoint_path or DEFAULT_CHECKPOINT_PATH),
+            "history": DEFAULT_TRAINING_HISTORY_PATH,
+            "curve": DEFAULT_TRAINING_CURVE_PATH,
+            "metrics": DEFAULT_FINAL_METRICS_PATH,
+        }
+
+    root = Path(run_dir)
+    checkpoint = Path(checkpoint_path) if checkpoint_path else root / "checkpoints" / "mgraphdta_best.pt"
+    try:
+        checkpoint.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise ValueError("With --run-dir, the checkpoint must be inside that run directory") from exc
+    return {
+        "checkpoint": checkpoint,
+        "history": root / "training_history.csv",
+        "curve": root / "training_curve.png",
+        "metrics": root / "final_metrics.json",
+    }
+
+
+def ensure_run_paths_are_new(paths: Dict[str, Path]) -> None:
+    """Refuse to overwrite any existing artifact in an explicitly named run."""
+    candidates = list(paths.values())
+    candidates.append(paths["checkpoint"].with_name(paths["checkpoint"].name + ".tmp"))
+    existing = [str(path) for path in candidates if path.exists()]
+    if existing:
+        raise FileExistsError(
+            "Run output already contains artifacts; choose a new --run-dir: "
+            + ", ".join(existing)
+        )
+
+
+def _raise_deterministic_operation_error(error: RuntimeError) -> None:
+    if torch.are_deterministic_algorithms_enabled() and "determin" in str(error).lower():
+        raise RuntimeError(
+            "Deterministic execution was requested, but this operation has no "
+            "deterministic implementation on the selected device. No nondeterministic "
+            "fallback was used. Retry with --no-deterministic only if that tradeoff is acceptable."
+        ) from error
 
 
 def split_train_validation(
@@ -324,69 +409,110 @@ def generate_training_curve(
     history: Iterable[Dict[str, Any]],
     output_path: Union[str, Path],
 ) -> Path:
-    """Build the training/validation MSE curve from recorded epoch history."""
+    """Generate a clean training and validation MSE curve."""
+    from matplotlib.ticker import MaxNLocator
+
     history = list(history)
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.set_title("MGraphDTA Davis Training Curve")
-    ax.set_xlabel("Epoch")
-    ax.set_ylabel("MSE")
-    ax.grid(True, linestyle="--", alpha=0.6)
+    fig, ax = plt.subplots(figsize=(12, 6.5))
 
     if not history:
-        ax.text(0.5, 0.5, "No training history available", ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "No training history available",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Mean Squared Error (MSE)")
         fig.tight_layout()
-        fig.savefig(output_file, dpi=300)
+        fig.savefig(output_file, dpi=300, bbox_inches="tight")
         plt.close(fig)
         return output_file
 
     epochs = [int(record["epoch"]) for record in history]
-    training_mse = [float(record["training_mse"]) for record in history]
-    validation_mse = [float(record["validation_mse"]) for record in history]
-    best_epoch = min(history, key=lambda record: record["validation_mse"])["epoch"]
-    best_validation = min(validation_mse)
+    training_mse = [
+        float(record["training_mse"]) for record in history
+    ]
+    validation_mse = [
+        float(record["validation_mse"]) for record in history
+    ]
 
+    best_index = min(
+        range(len(validation_mse)),
+        key=lambda index: validation_mse[index],
+    )
+    best_epoch = epochs[best_index]
+    best_validation = validation_mse[best_index]
+
+    # Plot clean lines without markers on every epoch.
     ax.plot(
         epochs,
         training_mse,
         label="Training MSE",
-        marker="o",
         color="tab:blue",
         linewidth=2,
     )
+
     ax.plot(
         epochs,
         validation_mse,
         label="Validation MSE",
-        marker="s",
         color="tab:orange",
         linewidth=2,
     )
+
+    # Highlight the best validation result.
     ax.scatter(
         [best_epoch],
         [best_validation],
         color="red",
-        s=60,
+        s=75,
         zorder=5,
-        label=f"Best validation MSE: epoch {best_epoch} = {best_validation}",
+        label=f"Best validation MSE: {best_validation:.4f}",
     )
-    ax.annotate(
-        f"Best validation MSE\nEpoch {best_epoch} = {best_validation}",
-        xy=(best_epoch, best_validation),
-        xytext=(best_epoch + max(0.5, len(history) * 0.05), best_validation + 0.03),
-        fontsize=9,
-        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.9),
-        arrowprops=dict(arrowstyle="->", color="black"),
+
+    ax.axvline(
+        best_epoch,
+        color="gray",
+        linestyle=":",
+        linewidth=1.2,
+        alpha=0.8,
+        label=f"Best epoch: {best_epoch}",
     )
-    ax.legend()
-    ax.set_xticks(epochs)
+
+    ax.set_title(
+        "MGraphDTA Training and Validation Curve",
+        fontsize=15,
+        pad=12,
+    )
+    ax.set_xlabel("Epoch", fontsize=12)
+    ax.set_ylabel("Mean Squared Error (MSE)", fontsize=12)
+
+    # Prevent overlapping epoch labels.
+    ax.xaxis.set_major_locator(
+        MaxNLocator(nbins=10, integer=True)
+    )
+
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.margins(x=0.02)
+
+    ax.legend(
+        loc="best",
+        frameon=True,
+        fontsize=10,
+    )
+
     fig.tight_layout()
-    fig.savefig(output_file, dpi=300)
+    fig.savefig(output_file, dpi=300, bbox_inches="tight")
     plt.close(fig)
+
     return output_file
 
 
@@ -430,6 +556,7 @@ def fit(
     patience: Optional[int] = DEFAULT_PATIENCE,
     device: DeviceArg = None,
     seed: Optional[int] = None,
+    deterministic: bool = True,
     optimizer: Optional[Optimizer] = None,
     criterion: Optional[nn.Module] = None,
     checkpoint_path: Optional[Union[str, Path]] = None,
@@ -445,7 +572,9 @@ def fit(
     if patience is not None and patience < 1:
         raise ValueError("patience must be positive or None")
     if seed is not None:
-        set_random_seed(seed)
+        set_random_seed(seed, deterministic=deterministic)
+    else:
+        configure_deterministic_execution(deterministic)
 
     resolved_device = resolve_device(device)
     model.to(resolved_device)
@@ -458,17 +587,21 @@ def fit(
     stopped_early = False
 
     for epoch in range(1, epochs + 1):
-        training_loss = train_one_epoch(
-            model,
-            train_loader,
-            optimizer,
-            loss_function,
-            resolved_device,
-            max_steps=steps_per_epoch,
-        )
-        validation_loss = validate(
-            model, validation_loader, loss_function, resolved_device
-        )
+        try:
+            training_loss = train_one_epoch(
+                model,
+                train_loader,
+                optimizer,
+                loss_function,
+                resolved_device,
+                max_steps=steps_per_epoch,
+            )
+            validation_loss = validate(
+                model, validation_loader, loss_function, resolved_device
+            )
+        except RuntimeError as error:
+            _raise_deterministic_operation_error(error)
+            raise
         if validation_loss < best_validation_loss:
             best_validation_loss = validation_loss
             best_epoch = epoch
@@ -517,7 +650,9 @@ def train_davis(
     *,
     processed_dir: str = "data/processed/davis",
     raw_dir: str = "data/raw/davis",
-    checkpoint_path: Union[str, Path] = "checkpoints/mgraphdta_best.pt",
+    atom_features_dir: Optional[str] = None,
+    checkpoint_path: Optional[Union[str, Path]] = None,
+    run_dir: Optional[Union[str, Path]] = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
     epochs: int = DEFAULT_EPOCHS,
     steps_per_epoch: Optional[int] = DEFAULT_STEPS_PER_EPOCH,
@@ -527,17 +662,23 @@ def train_davis(
     seed: Optional[int] = DEFAULT_SEED,
     device: DeviceArg = None,
     num_workers: int = 0,
+    deterministic: bool = True,
     on_epoch_end: Optional[Callable[[Dict[str, float]], None]] = None,
 ) -> Dict[str, Any]:
     """Train on a seeded training-fold split, then evaluate the independent test fold."""
     if seed is not None:
-        set_random_seed(seed)
+        set_random_seed(seed, deterministic=deterministic)
+    else:
+        configure_deterministic_execution(deterministic)
 
-    train_dataset = DavisDataset(
-        split="train",
-        raw_dir=raw_dir,
-        processed_dir=processed_dir,
-    )
+    paths = resolve_run_paths(run_dir=run_dir, checkpoint_path=checkpoint_path)
+    if run_dir is not None:
+        ensure_run_paths_are_new(paths)
+
+    dataset_kwargs = {"raw_dir": raw_dir, "processed_dir": processed_dir}
+    if atom_features_dir is not None:
+        dataset_kwargs["atom_features_dir"] = atom_features_dir
+    train_dataset = DavisDataset(split="train", **dataset_kwargs)
 
     training_subset, validation_subset = split_train_validation(
         train_dataset,
@@ -545,11 +686,17 @@ def train_davis(
         seed=seed,
     )
 
+    train_generator = torch.Generator()
+    if seed is None:
+        train_generator.seed()
+    else:
+        train_generator.manual_seed(seed)
     train_loader = make_dataloader(
         training_subset,
         batch_size,
         shuffle=True,
         num_workers=num_workers,
+        generator=train_generator,
     )
 
     validation_loader = make_dataloader(
@@ -561,9 +708,10 @@ def train_davis(
 
     model = MGraphDTA()
 
-    training_history_path = Path("results/davis/training_history.csv")
-    training_curve_path = Path("results/davis/training_curve.png")
-    final_metrics_path = Path("results/davis/final_metrics.json")
+    checkpoint_path = paths["checkpoint"]
+    training_history_path = paths["history"]
+    training_curve_path = paths["curve"]
+    final_metrics_path = paths["metrics"]
 
     # Reset history when a new training run starts.
     live_history = []
@@ -593,6 +741,7 @@ def train_davis(
         patience=patience,
         device=device,
         seed=seed,
+        deterministic=deterministic,
         checkpoint_path=checkpoint_path,
         on_epoch_end=handle_epoch_end,
     )
@@ -618,18 +767,10 @@ def train_davis(
         final_validation_mse = None
         final_epochs_completed = 0
 
-    load_checkpoint(
-        checkpoint_path,
-        model,
-        device=device,
-    )
+    load_checkpoint(checkpoint_path, model, device=device)
 
     # Do not construct or iterate over the independent test dataset before this point.
-    test_dataset = DavisDataset(
-        split="test",
-        raw_dir=raw_dir,
-        processed_dir=processed_dir,
-    )
+    test_dataset = DavisDataset(split="test", **dataset_kwargs)
 
     test_loader = make_dataloader(
         test_dataset,
@@ -638,12 +779,12 @@ def train_davis(
         num_workers=num_workers,
     )
 
-    test_mse = evaluate(
-        model,
-        test_loader,
-        device=device,
-    )
-    test_metrics = evaluate_test_metrics(model, test_loader, device=device)
+    try:
+        test_mse = evaluate(model, test_loader, device=device)
+        test_metrics = evaluate_test_metrics(model, test_loader, device=device)
+    except RuntimeError as error:
+        _raise_deterministic_operation_error(error)
+        raise
 
     final_metrics = {
         "dataset": "davis",
@@ -657,12 +798,19 @@ def train_davis(
         "test_ci": float(test_metrics["ci"]),
         "test_r_m2": float(test_metrics["r_m2"]),
         "epochs_completed": final_epochs_completed,
+        "epochs_requested": epochs,
         "stopped_early": training_result.get("stopped_early", False),
         "patience": training_result.get("patience", patience),
         "learning_rate": learning_rate,
         "batch_size": batch_size,
         "steps_per_epoch": steps_per_epoch,
+        "validation_fraction": validation_fraction,
         "seed": seed,
+        "deterministic_algorithms": deterministic,
+        "num_workers": num_workers,
+        "checkpoint": str(checkpoint_path),
+        "run_dir": str(run_dir) if run_dir is not None else None,
+        "atom_features_dir": str(atom_features_dir) if atom_features_dir is not None else None,
         "device": training_result.get(
             "device",
             str(resolve_device(device)),
@@ -683,6 +831,7 @@ def train_davis(
         "training_history_path": str(training_history_path),
         "training_curve_path": str(training_curve_path),
         "final_metrics_path": str(final_metrics_path),
+        "checkpoint_path": str(checkpoint_path),
     }
 
 
@@ -690,6 +839,7 @@ def evaluate_checkpoint(
     *,
     processed_dir: str = "data/processed/davis",
     raw_dir: str = "data/raw/davis",
+    atom_features_dir: Optional[str] = None,
     checkpoint_path: Union[str, Path] = "checkpoints/mgraphdta_best.pt",
     batch_size: int = DEFAULT_BATCH_SIZE,
     device: DeviceArg = None,
@@ -701,11 +851,10 @@ def evaluate_checkpoint(
     model = MGraphDTA()
     checkpoint = load_checkpoint(checkpoint_path, model, device=resolved_device)
 
-    test_dataset = DavisDataset(
-        split="test",
-        raw_dir=raw_dir,
-        processed_dir=processed_dir,
-    )
+    dataset_kwargs = {"raw_dir": raw_dir, "processed_dir": processed_dir}
+    if atom_features_dir is not None:
+        dataset_kwargs["atom_features_dir"] = atom_features_dir
+    test_dataset = DavisDataset(split="test", **dataset_kwargs)
     test_loader = make_dataloader(
         test_dataset,
         batch_size=batch_size,
@@ -716,6 +865,8 @@ def evaluate_checkpoint(
 
     result = {
         "dataset": "davis",
+        "processed_dir": str(processed_dir),
+        "atom_features_dir": str(atom_features_dir) if atom_features_dir is not None else None,
         "checkpoint": str(checkpoint_path),
         "best_epoch": checkpoint["epoch"],
         "best_validation_mse": checkpoint["best_validation_loss"],
@@ -731,8 +882,22 @@ def evaluate_checkpoint(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--processed-dir", default="data/processed/davis")
+    parser.add_argument(
+        "--atom-features-dir",
+        default=None,
+        help="Optional validated versioned atom-feature bundle; omit to use default unscaled features",
+    )
     parser.add_argument("--raw-dir", default="data/raw/davis")
-    parser.add_argument("--checkpoint", default="checkpoints/mgraphdta_best.pt")
+    parser.add_argument(
+        "--checkpoint",
+        default=None,
+        help="Checkpoint output path (defaults to the legacy path, or run-dir/checkpoints/mgraphdta_best.pt)",
+    )
+    parser.add_argument(
+        "--run-dir",
+        default=None,
+        help="New, run-specific output directory; existing run artifacts are never overwritten",
+    )
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS)
     parser.add_argument("--steps-per-epoch", type=int, default=DEFAULT_STEPS_PER_EPOCH)
@@ -744,6 +909,12 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument(
+        "--deterministic",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Request deterministic PyTorch operations; unsupported operations fail clearly",
+    )
     parser.add_argument(
         "--evaluate-checkpoint",
         action="store_true",
@@ -760,7 +931,8 @@ def main() -> None:
         result = evaluate_checkpoint(
             processed_dir=args.processed_dir,
             raw_dir=args.raw_dir,
-            checkpoint_path=args.checkpoint,
+            atom_features_dir=args.atom_features_dir,
+            checkpoint_path=args.checkpoint or DEFAULT_CHECKPOINT_PATH,
             batch_size=args.batch_size,
             device=args.device,
             num_workers=args.num_workers,
@@ -785,7 +957,9 @@ def main() -> None:
     result = train_davis(
         processed_dir=args.processed_dir,
         raw_dir=args.raw_dir,
+        atom_features_dir=args.atom_features_dir,
         checkpoint_path=args.checkpoint,
+        run_dir=args.run_dir,
         batch_size=args.batch_size,
         epochs=args.epochs,
         steps_per_epoch=args.steps_per_epoch,
@@ -795,6 +969,7 @@ def main() -> None:
         seed=args.seed,
         device=args.device,
         num_workers=args.num_workers,
+        deterministic=args.deterministic,
         on_epoch_end=report_epoch,
     )
     print(

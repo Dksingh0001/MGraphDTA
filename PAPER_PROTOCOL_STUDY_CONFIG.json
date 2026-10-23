@@ -1,0 +1,99 @@
+{
+  "configuration_status": "blocked_pending_final_pre_run_review",
+  "launch_decision": {
+    "status": "do_not_launch",
+    "blocker": "The paper equations identify h as the output width of each conceptual dense graph-convolution step, which is structurally represented by local DenseLayer growth_rate. However, the pinned released model shows only growth_rate=32 in its regression caller and does not expose the authors' Table S3 tuning invocation proving that the selected 64 was wired to this argument. Exact reproduction of the authors' tuned parameter-to-code binding therefore remains unverified. The local implementation does not make every physical GraphConv output h because it includes a 2x bottleneck. The paper's transition dimension notation also has an apparent indexing inconsistency.",
+    "required_resolution": "Either obtain authoritative evidence linking the authors' Table S3 hidden-channel trial variable to growth_rate, or obtain explicit user approval to proceed with this disclosed local mapping as a project-specific interpretation. Then complete and record the effective runner configuration and remaining pre-run review before any study launch."
+  },
+  "study": {
+    "task": "Davis training-only five-fold Optuna hyperparameter tuning",
+    "trial_count": 20,
+    "trial_count_basis": "Project-selected initial budget; not specified by the paper and not claimed sufficient for search convergence.",
+    "sampler": {
+      "class": "TPESampler",
+      "seed": 20261023,
+      "n_startup_trials": 10,
+      "basis": "Project-selected reproducibility settings; the paper does not specify sampler or seed."
+    },
+    "pruner": {
+      "class": "NopPruner",
+      "basis": "Project-selected; no pruning policy is reported in the paper."
+    },
+    "objective": "Unweighted arithmetic mean of the five fold-best validation MSE values.",
+    "fixed_test_partition": "Must not be loaded or consulted during tuning or model selection."
+  },
+  "search_space": {
+    "num_blocks": [1, 2, 3, 4, 5],
+    "layers_per_block": [2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "hidden_channels": [32, 64, 96, 128, 160],
+    "mcnn_branch_count": [2, 3, 4, 5],
+    "source": "Official RSC ESI Table S3: https://www.rsc.org/suppdata/d1/sc/d1sc05180f/d1sc05180f1.pdf",
+    "selected_paper_values": {
+      "num_blocks": 3,
+      "layers_per_block": 8,
+      "hidden_channels": 64,
+      "mcnn_branch_count": 3
+    },
+    "local_hidden_channel_mapping": "Paper-level mapping supported by article Eqs. (1) and (3): hidden_channels is h, the output width of each conceptual dense graph-convolution step and thus the appended DenseLayer growth_rate. The pinned released implementation realizes each DenseLayer with an internal 2x bottleneck GraphConv followed by a growth_rate-width output GraphConv; the stem remains 32 and transitions halve block width. Therefore hidden_channels=64 does not mean every physical GraphConv emits 64 channels. Table S3 does not specify these implementation-internal widths."
+  },
+  "training": {
+    "learning_rate": {
+      "value": 0.0005,
+      "basis": "Paper-reported in article section 2.8."
+    },
+    "batch_size": {
+      "value": 512,
+      "basis": "Paper-reported in article section 2.8."
+    },
+    "max_epochs": {
+      "value": 1000,
+      "basis": "Project choice following the current local default; not specified by the paper."
+    },
+    "steps_per_epoch": {
+      "value": 50,
+      "basis": "Project choice following the current local default; not specified by the paper."
+    },
+    "patience": {
+      "value": 400,
+      "basis": "Project choice following the current local default; not specified by the paper."
+    },
+    "base_seed": 42,
+    "fold_seed_rule": "base_seed + fold_number - 1",
+    "deterministic": true,
+    "device": "cuda:0",
+    "device_basis": "Project choice based on the currently available NVIDIA RTX 2000 Ada; no training-speed or full-run memory benchmark has been performed.",
+    "num_workers": 0,
+    "checkpoint_selection": "Validation MSE only; fixed test fold is excluded.",
+    "schedule_status": "Provisional project settings; compute/runtime sufficiency is unverified. Do not launch until reviewed."
+  },
+  "output": {
+    "planned_root": "results/davis/paper_protocol_s3_tuning_20261023",
+    "root_checked_absent_on": "2026-10-23",
+    "root_policy": "Must be absent at launch; run_davis_optuna_study refuses any existing root.",
+    "artifacts": [
+      "protocol_manifest.json",
+      "optuna_study.db",
+      "trials.csv",
+      "trials.json",
+      "best_parameters.json",
+      "failures.json"
+    ]
+  },
+  "resource_check": {
+    "gpu": "NVIDIA RTX 2000 Ada Generation",
+    "free_vram_bytes_at_check": 16009658368,
+    "free_disk_bytes_on_d_at_check": 1881055444992,
+    "runtime_estimate": null,
+    "checked_utc_date": "2026-10-23",
+    "note": "Read-only resource check only; no training benchmark was run. Twenty trials x five folds x up to 1000 epochs x 50 steps can be expensive, and available VRAM/disk does not establish runtime or peak model memory."
+  },
+  "unresolved_before_execution": [
+    "No empirical runtime benchmark for this full model/data schedule.",
+    "The selected project trial budget is not shown to be sufficient for stable hyperparameter selection.",
+    "The paper's hidden-width h maps to local DenseLayer growth_rate at the conceptual-layer boundary; it is not the output width of every physical GraphConv inside the released bottleneck implementation.",
+    "The study configuration JSON is not consumed by a command-line entry point; launch must bind the reviewed values to run_davis_optuna_study explicitly and record the exact effective arguments.",
+    "The runner exports failed trial state and parameters but does not currently persist exception messages in failures.json.",
+    "The official ESI is verified online but no local PDF/hash has been recorded; Tables S1-S2 and full training details remain outside this Table S3 update."
+  ],
+  "reproduction_claim": false
+}

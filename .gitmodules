@@ -1,0 +1,6 @@
+[submodule "references/mgraphdta_official/author_repo"]
+	path = references/mgraphdta_official/author_repo
+	url = https://github.com/guaguabujianle/MGraphDTA.git
+[submodule "references/mgraphdta_official/DeepDTA_source"]
+	path = references/mgraphdta_official/DeepDTA_source
+	url = https://github.com/hkmztrk/DeepDTA.git

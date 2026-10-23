@@ -27,8 +27,9 @@ Original paper: Ziduo Yang, Weihe Zhong, Lu Zhao, and Calvin Yu-Chian Chen, "MGr
 | Prediction head | Implemented | `src/models/mgraphdta.py`; fused 192-dimensional vector, MLP widths 1024, 1024, 256, 1, ReLU and 0.1 dropout on hidden layers |
 | Training and split isolation | Implemented | `src/train.py`; validation MSE controls checkpoint selection/early stopping; best checkpoint restored before test evaluation; MSE history, curve, and final metrics are written |
 | Evaluation metrics | Implemented | `src/metrics.py` provides MSE, RMSE, CI, and the corrected authors' `r_m^2` calculation; `tests/test_metrics.py` covers known values |
-| Grad-AAM | Pending | `src/explainability/grad_aam.py` contains a module description but no implementation |
-| Other datasets/experiments | Pending | No additional dataset pipeline or completed ablation is evidenced in the current source tree |
+| Grad-AAM | Implemented | `src/explainability/grad_aam.py` computes per-atom model attributions, with visualization scripts and saved examples. This is implementation-level validation; the attributions are not experimentally validated binding contacts. |
+| Protein-GNN experiment | Completed experimental baseline | Separate sequence-adjacency protein-GNN experiment and metrics are stored under `results/davis/protein_gnn_experiment/`; it is not the primary MGraphDTA result or a paper reproduction. |
+| Systematic ablations / additional benchmark datasets | Pending | No systematic ablation study or additional benchmark-dataset evaluation is recorded. |
 
 The paper calls MGNN 27 architectural units: 24 DenseLayer units and 3 transitions, excluding `conv0`. This implementation has 28 top-level stages including `conv0` and 52 literal GraphConv modules because each DenseLayer has two GraphConv operations. These are different counting conventions for this implementation, not 52 paper-reported layers.
 
@@ -45,7 +46,7 @@ These are historical pilot values only. They are superseded by the completed 112
 
 ## 5. Current Davis Experiment Status
 
-The Davis training run was stopped manually at epoch 112. The saved best-validation checkpoint is from epoch 91, selected by validation MSE, and is stored at `results/davis/run_112_backup/mgraphdta_best.pt`. The independent test fold was evaluated using that checkpoint.
+The primary Davis MGraphDTA run is archived in `results/davis/run_112_backup/`, the reference archive for its checkpoint, 112-epoch history, training curve, and evaluation files. Training ended manually at epoch 112; early stopping did not trigger (the recorded patience counter was 21 of 30). The best-validation checkpoint is from epoch 91, selected by validation MSE 0.23236284946015257, and the independent test fold was evaluated using that checkpoint. Root-level history, curve, and final metrics mirror this primary run.
 
 | Training configuration | Value |
 | --- | ---: |
@@ -61,13 +62,17 @@ The Davis training run was stopped manually at epoch 112. The saved best-validat
 | --- | ---: |
 | Best epoch | 91 |
 | Best validation MSE | 0.23236284946015257 |
-| Independent test MSE | 0.2570411052920772 |
-| Independent test RMSE | 0.5069922142322081 |
-| Independent test CI | 0.8790452402222367 |
-| Independent test `r_m^2` | 0.6817055902984536 |
+| Independent test MSE | 0.2570411 |
+| Independent test RMSE | 0.5069922 |
+| Independent test CI | 0.8790452 |
+| Independent test `r_m^2` | 0.6817056 |
 | Device | CUDA |
 
-The final `r_m^2` above uses the corrected implementation, which follows the original MGraphDTA authors' `regression/metrics.py` calculation. The earlier value 0.303710 was produced by the superseded calculation and must not be reported as the final result. Corrected evaluation metrics are recorded in `results/davis/run_112_backup/evaluation_metrics_corrected.json`.
+The final `r_m^2` above uses the corrected implementation, which follows the original MGraphDTA authors' `regression/metrics.py` calculation. The older `results/davis/run_112_backup/evaluation_metrics.json` is retained as a historical result and records the superseded `r_m^2` value 0.3037103; it is not authoritative. Use `results/davis/run_112_backup/evaluation_metrics_corrected.json` for this run's authoritative evaluation. The one-epoch CPU pilot metrics are preserved separately as `results/davis/historical_one_epoch_cpu_final_metrics.json`.
+
+### Separate Protein-GNN Experiment
+
+The experimental sequence-adjacency protein-GNN run is separate from primary MGraphDTA. Its checkpoint, history, curve, and final metrics remain under `results/davis/protein_gnn_experiment/`. Its test metrics (MSE 0.6517305, RMSE 0.8072983, CI 0.7596737, `r_m^2` 0.2090045) are experimental baseline results and must not be substituted for or combined with the primary MGraphDTA metrics.
 
 **This is not an exact reproduction of the paper's Table 3 experimental protocol.** This run used a different training and validation configuration and did not reproduce the paper's full hyperparameter optimization or repeated-experiment protocol. The results above are this project's single-run Davis evaluation, not a paper reproduction claim.
 
@@ -83,13 +88,13 @@ This repository's protocol is distinct from the paper's described five-fold cros
 
 ## 7. Explainability Plan
 
-Grad-AAM is not implemented. Planned work is to capture activations and gradients at the final MGNN transition, compute atom-level importance values, normalize them, and render them on RDKit molecular depictions. Implement and validate this separately after the training/evaluation workflow is stable; do not claim explanations before then.
+Grad-AAM is implemented in `src/explainability/grad_aam.py`, with tests and Davis visualization examples. It provides model-derived atom attribution, not scientific validation of physical binding contacts. Future work may assess attribution stability and compare highlighted atoms with independently established structural evidence; do not interpret visualizations alone as proof of binding interactions.
 
 ## 8. GitHub and Reproducibility Plan
 
 - Keep source, tests, dependency pins, and documentation in Git.
 - Raw and processed Davis files, checkpoints, and generated result files are ignored by `.gitignore`; provide dataset setup instructions without committing those artifacts.
-- Record the exact training command, seed, Python/PyTorch/CUDA/PyG/RDKit versions, split settings, best epoch, checkpoint, and evaluation outputs for each run.
+- Record the exact training command, seed, Python/PyTorch/CUDA/PyG/RDKit versions, split settings, best epoch, checkpoint, and evaluation outputs for each run. For this GPU's unsupported deterministic adaptive max pooling backward operation, use seeded RNGs with `--no-deterministic` and document possible small GPU numerical differences.
 - Preserve the test-set isolation rule and clearly distinguish pilot, full-run, and paper-reported values.
 - Cite the original authors' repository: [guaguabujianle/MGraphDTA](https://github.com/guaguabujianle/MGraphDTA).
 
@@ -98,6 +103,7 @@ Grad-AAM is not implemented. Planned work is to capture activations and gradient
 1. Record the pilot command and environment metadata; confirm the pilot checkpoint and result log are retained as intended.
 2. If a paper-level comparison is required, plan and run the paper's full hyperparameter optimization and repeated-experiment protocol, documenting the protocol separately from this completed run.
 3. Use the corrected metric implementation for future evaluations and keep results tied to their specific checkpoints and protocols.
-4. Implement and test Grad-AAM atom visualizations.
+4. Assess Grad-AAM attribution stability and compare with independent structural evidence before making scientific claims.
 5. Define and run any additional dataset comparisons or ablations with their split protocols documented.
 6. Update project documentation with reproducible commands and clearly labeled results without claiming paper reproduction unless protocols and evidence support it.
+7. Run the five-seed workflow under a fresh configurable experiment root, using `--no-deterministic` for this GPU, and report aggregate metrics without selecting a seed by test performance. Retry failed seeds only under another unused root so partial outputs remain available for debugging.

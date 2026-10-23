@@ -2,6 +2,7 @@
 
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -20,6 +21,8 @@ from src.train import (
     generate_training_curve,
     load_checkpoint,
     make_dataloader,
+    ensure_run_paths_are_new,
+    resolve_run_paths,
     resolve_device,
     save_final_metrics,
     split_train_validation,
@@ -109,6 +112,84 @@ def test_train_validation_subsets_are_disjoint_and_reproducible():
     assert DEFAULT_SEED == 42
 
 
+def test_different_seeds_change_split_and_model_initialization():
+    dataset = TensorDataset(torch.arange(100))
+    _, validation_a = split_train_validation(dataset, 0.2, seed=42)
+    _, validation_b = split_train_validation(dataset, 0.2, seed=43)
+    assert validation_a.indices != validation_b.indices
+
+    from src.train import set_random_seed
+
+    set_random_seed(42)
+    model_a = nn.Linear(4, 2)
+    set_random_seed(43)
+    model_b = nn.Linear(4, 2)
+    assert not torch.equal(model_a.weight, model_b.weight)
+
+
+def test_seeded_training_loader_order_repeats_and_changes_by_seed():
+    samples = [
+        Data(
+            x=torch.ones((1, 1)),
+            edge_index=torch.empty((2, 0), dtype=torch.long),
+            target=torch.tensor([[float(index)]]),
+            y=torch.tensor([float(index)]),
+        )
+        for index in range(30)
+    ]
+
+    def order(seed):
+        generator = torch.Generator().manual_seed(seed)
+        loader = make_dataloader(
+            samples, batch_size=1, shuffle=True, generator=generator
+        )
+        return [int(batch.target.item()) for batch in loader]
+
+    assert order(42) == order(42)
+    assert order(42) != order(43)
+
+
+def test_seed_setup_enables_deterministic_torch_and_cudnn_settings():
+    from src.train import configure_deterministic_execution, set_random_seed
+
+    old_deterministic = torch.are_deterministic_algorithms_enabled()
+    old_cudnn_deterministic = torch.backends.cudnn.deterministic
+    old_cudnn_benchmark = torch.backends.cudnn.benchmark
+    try:
+        set_random_seed(42, deterministic=True)
+        assert torch.are_deterministic_algorithms_enabled()
+        assert torch.backends.cudnn.deterministic
+        assert not torch.backends.cudnn.benchmark
+    finally:
+        configure_deterministic_execution(old_deterministic)
+        torch.backends.cudnn.deterministic = old_cudnn_deterministic
+        torch.backends.cudnn.benchmark = old_cudnn_benchmark
+
+
+def test_run_paths_preserve_defaults_and_isolate_each_seed(tmp_path):
+    defaults = resolve_run_paths()
+    assert defaults["checkpoint"] == Path("checkpoints/mgraphdta_best.pt")
+    assert defaults["history"] == Path("results/davis/training_history.csv")
+    assert defaults["curve"] == Path("results/davis/training_curve.png")
+    assert defaults["metrics"] == Path("results/davis/final_metrics.json")
+
+    run_a = resolve_run_paths(tmp_path / "seed_42")
+    run_b = resolve_run_paths(tmp_path / "seed_43")
+    assert run_a["checkpoint"] == tmp_path / "seed_42" / "checkpoints" / "mgraphdta_best.pt"
+    assert run_a["history"] != run_b["history"]
+    assert run_a["metrics"] != run_b["metrics"]
+    ensure_run_paths_are_new(run_a)
+
+    run_a["checkpoint"].parent.mkdir(parents=True)
+    run_a["checkpoint"].touch()
+    try:
+        ensure_run_paths_are_new(run_a)
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("Existing per-run checkpoint should prevent overwrite")
+
+
 def test_fit_selects_checkpoint_and_stops_using_validation_loss(tmp_path):
     model = TinyRegressor()
     train_loader = object()
@@ -159,6 +240,28 @@ def test_fit_selects_checkpoint_and_stops_using_validation_loss(tmp_path):
     checkpoint = load_checkpoint(checkpoint_path, best_model, device="cpu")
     assert checkpoint["epoch"] == 2
     assert best_model.weight.item() == 2.0
+
+
+def test_fit_explains_unsupported_deterministic_operation():
+    model = TinyRegressor()
+    with patch(
+        "src.train.train_one_epoch",
+        side_effect=RuntimeError("operation has no deterministic implementation on CUDA"),
+    ):
+        try:
+            fit(
+                model,
+                object(),
+                object(),
+                epochs=1,
+                steps_per_epoch=1,
+                device="cpu",
+                seed=42,
+            )
+        except RuntimeError as error:
+            assert "No nondeterministic fallback was used" in str(error)
+        else:
+            raise AssertionError("Unsupported deterministic operations should fail clearly")
 
 
 def test_training_history_csv_and_curve_are_written(tmp_path):
@@ -321,13 +424,17 @@ def test_test_data_is_loaded_and_evaluated_only_after_training(tmp_path):
         "src.train.generate_training_curve"
     ), patch("src.train.save_final_metrics"):
         result = train_davis(
-            checkpoint_path=tmp_path / "unused.pt",
+            run_dir=tmp_path / "seed_42",
             epochs=1,
             steps_per_epoch=1,
             device="cpu",
         )
 
     assert result["test_mse"] == 0.75
+    assert result["checkpoint_path"] == str(tmp_path / "seed_42" / "checkpoints" / "mgraphdta_best.pt")
+    assert result["training_history_path"] == str(tmp_path / "seed_42" / "training_history.csv")
+    assert result["training_curve_path"] == str(tmp_path / "seed_42" / "training_curve.png")
+    assert result["final_metrics_path"] == str(tmp_path / "seed_42" / "final_metrics.json")
     assert events.index("fit_complete") < events.index("restore_best_checkpoint")
     assert events.index("restore_best_checkpoint") < events.index("load_test")
     assert events.index("load_test") < events.index("loader_test")

@@ -120,6 +120,24 @@ def test_davis_pyg_batches_variable_edge_counts():
     assert batch.edge_index.max().item() < batch.x.shape[0]
 
 
+def test_existing_train_table_load_does_not_enter_preprocessing(tmp_path, monkeypatch):
+    processed_dir = tmp_path / "processed"
+    processed_dir.mkdir()
+    (processed_dir / "davis_train.csv").write_text("pair_idx\n17\n", encoding="utf-8")
+
+    def fail_if_preprocessing_runs(**_kwargs):
+        raise AssertionError("Existing training split should not trigger preprocessing")
+
+    monkeypatch.setattr("src.dataset.prepare_davis_tables", fail_if_preprocessing_runs)
+    dataset = DavisDataset(
+        split="train",
+        raw_dir=str(tmp_path / "raw"),
+        processed_dir=str(processed_dir),
+    )
+
+    assert dataset.df["pair_idx"].tolist() == [17]
+
+
 if __name__ == "__main__":
     test_davis_pipeline()
     test_davis_pyg_batches_variable_edge_counts()

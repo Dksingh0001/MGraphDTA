@@ -6,6 +6,8 @@ from torch import Tensor, nn
 from torch_geometric.data import Data
 
 from src.explainability.grad_aam import GradAAM, _normalize
+from src.dataset import DavisDataset
+from src.models.mgraphdta import MGraphDTA
 
 
 CHANNEL_COUNT = 228
@@ -140,3 +142,38 @@ def test_hook_and_mode_are_restored_after_attribution_exception():
 
     assert model.training
     assert len(transition._forward_hooks) == hook_count
+
+
+def test_grad_aam_hooks_final_transition_for_nondefault_mgnn_depth():
+    data = DavisDataset(split="all")[0]["pyg_data"]
+    model = MGraphDTA(num_blocks=1, layers_per_block=2).eval()
+    final_transition = model.drug_encoder.final_transition
+    assert final_transition is model.drug_encoder.transition1
+
+    result = GradAAM(model).attribute(data)
+
+    assert result.activation_shape[0] == data.x.shape[0]
+    assert result.atom_importance.shape == (data.x.shape[0],)
+    assert torch.isfinite(result.atom_importance).all()
+
+
+def test_grad_aam_channel_dimensions_follow_configured_hidden_width():
+    data = Data(
+        x=torch.rand((4, 22)),
+        edge_index=torch.tensor([[0, 1, 1, 2], [1, 0, 2, 1]], dtype=torch.long),
+        target=torch.ones((1, 1200), dtype=torch.long),
+        y=torch.tensor([5.0]),
+    )
+    model = MGraphDTA(
+        num_blocks=1,
+        layers_per_block=2,
+        mcnn_branch_count=2,
+        hidden_channels=64,
+    ).eval()
+    result = GradAAM(model).attribute(data)
+    expected_channels = model.drug_encoder.pre_pool_channels
+
+    assert result.activation_shape == (4, expected_channels)
+    assert result.channel_weights.shape == (1, expected_channels)
+    assert torch.isfinite(result.channel_weights).all()
+    assert torch.isfinite(result.atom_importance).all()

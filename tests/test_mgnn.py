@@ -262,6 +262,97 @@ def test_architecture_description():
     print("\n" + "=" * 62)
     print("TEST 5: Architecture Description from Model")
     print("=" * 62)
+
+
+def test_configurable_blocks_and_dense_depth_preserve_depth_accounting():
+    data = _smiles_to_pyg(TEST_MOLECULES[0][1])
+    for num_blocks, layers_per_block in ((1, 2), (2, 4)):
+        model = MGNN(
+            num_blocks=num_blocks,
+            layers_per_block=layers_per_block,
+        ).eval()
+        conceptual_depth = num_blocks * (layers_per_block + 1)
+        physical_graph_convs = 1 + num_blocks * (2 * layers_per_block + 1)
+        graph_conv_wrappers = sum(
+            isinstance(module, GraphConvBn) for module in model.modules()
+        )
+        with torch.inference_mode():
+            output = model(data)
+
+        assert model._gcn_depth == conceptual_depth
+        assert graph_conv_wrappers == physical_graph_convs
+        assert model.final_transition is getattr(model, f"transition{num_blocks}")
+        assert output.shape == (1, DRUG_EMBEDDING_DIM)
+        assert torch.isfinite(output).all()
+        assert f"Conceptual depth       : {conceptual_depth}" in model.describe_architecture()
+
+
+def test_s3_hidden_channel_choices_preserve_depth_shapes_and_finite_readout():
+    data = _smiles_to_pyg(TEST_MOLECULES[0][1])
+    num_blocks, layers_per_block = 2, 3
+    for hidden_channels in (32, 64, 96, 128, 160):
+        model = MGNN(
+            num_blocks=num_blocks,
+            layers_per_block=layers_per_block,
+            hidden_channels=hidden_channels,
+        ).eval()
+        expected_graph_convs = 1 + num_blocks * (2 * layers_per_block + 1)
+        block_channels = 32
+        for block_idx in range(1, num_blocks + 1):
+            block = getattr(model, f"block{block_idx}")
+            transition = getattr(model, f"transition{block_idx}")
+            assert block.out_channels == block_channels + layers_per_block * hidden_channels, (
+                f"hidden_channels={hidden_channels}: dense concatenation width is incorrect"
+            )
+            assert block.layers[0].conv1.conv.out_channels == 2 * hidden_channels, (
+                f"hidden_channels={hidden_channels}: 2x bottleneck width changed"
+            )
+            assert block.layers[0].conv2.conv.out_channels == hidden_channels, (
+                f"hidden_channels={hidden_channels}: dense growth width is incorrect"
+            )
+            assert transition.conv.in_channels == block.out_channels
+            assert transition.conv.out_channels == block.out_channels // 2
+            block_channels = transition.conv.out_channels
+
+        physical_graph_convs = sum(
+            isinstance(module, GraphConvBn) for module in model.modules()
+        )
+        with torch.inference_mode():
+            output = model(data)
+
+        assert model._gcn_depth == num_blocks * (layers_per_block + 1), (
+            f"hidden_channels={hidden_channels}: conceptual depth changed"
+        )
+        assert physical_graph_convs == expected_graph_convs, (
+            f"hidden_channels={hidden_channels}: physical GraphConv count changed"
+        )
+        assert model.fc.in_features == model.pre_pool_channels
+        assert output.shape == (1, DRUG_EMBEDDING_DIM)
+        assert torch.isfinite(output).all(), (
+            f"hidden_channels={hidden_channels}: readout contains non-finite values"
+        )
+
+
+def test_default_hidden_width_preserves_legacy_state_dict_shapes():
+    default_model = MGNN()
+    explicitly_default_model = MGNN(hidden_channels=32)
+    default_shapes = {name: tuple(value.shape) for name, value in default_model.state_dict().items()}
+    explicit_shapes = {
+        name: tuple(value.shape) for name, value in explicitly_default_model.state_dict().items()
+    }
+    assert default_model.hidden_channels == GROWTH_RATE == 32
+    assert default_shapes == explicit_shapes
+    assert default_shapes["block1.layers.0.conv1.conv.lin_rel.weight"] == (64, 32)
+    assert default_shapes["transition3.conv.lin_rel.weight"] == (228, 456)
+
+
+def test_mgnn_rejects_nonpositive_architecture_dimensions():
+    for kwargs in ({"num_blocks": 0}, {"layers_per_block": 0}):
+        try:
+            MGNN(**kwargs)
+        except ValueError:
+            continue
+        raise AssertionError(f"Expected invalid architecture to fail: {kwargs}")
     model = MGNN()
     desc = model.describe_architecture()
     print(desc)

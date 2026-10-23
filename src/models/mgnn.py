@@ -240,36 +240,12 @@ class MultiscaleBlock(nn.Module):
 #  MGNN: Drug encoder (Sections 5-8)                                         #
 # --------------------------------------------------------------------------- #
 class MGNN(nn.Module):
-    """
-    Multiscale Graph Neural Network (MGNN) — Drug Molecular Encoder.
+    """Multiscale graph encoder with configurable block and dense-layer counts.
 
-    Architecture (paper-reported depth 27; top-level stage count 28):
-
-        conv0         : GraphConvBn(22 → 32)          [1 stage; excluded from 27]
-        block1        : MultiscaleBlock(32, 8 layers)  [8 DenseLayer units]
-            → output : 32 + 8*32 = 288 channels
-        transition1   : GraphConvBn(288 → 144)         [1 stage]
-        block2        : MultiscaleBlock(144, 8 layers) [8 DenseLayer units]
-            → output : 144 + 8*32 = 400 channels
-        transition2   : GraphConvBn(400 → 200)         [1 stage]
-        block3        : MultiscaleBlock(200, 8 layers) [8 DenseLayer units]
-            → output : 200 + 8*32 = 456 channels
-        transition3   : GraphConvBn(456 → 228)         [1 stage]
-        ─────────────────────────────────────────────────────────
-        Paper-reported depth = 3*8 + 3 = 27 (excludes conv0)
-        Top-level stages = 1 + 3*8 + 3 = 28 (includes conv0)
-        GraphConv modules = 1 + 3*8*2 + 3 = 52 (two per DenseLayer)
-
-        Global Mean Pooling → Linear(228 → 96)
-        Output: y_G ∈ R^{96}  (drug embedding)
-
-    Args:
-        in_channels     : Input node feature dimension (default 22).
-        initial_channels: Channels produced by conv0 (default 32).
-        growth_rate     : k, new channels per dense layer (default 32).
-        bn_size         : Bottleneck factor (default 2 → 64 intermediate).
-        layers_per_block: Dense layers per block (default 8).
-        drug_embed_dim  : Final drug embedding size (default 96).
+    Conceptual depth counts each dense unit and each transition once, excludes
+    ``conv0``, and is ``num_blocks * (layers_per_block + 1)``. Physical
+    GraphConv modules count both convolutions inside each dense unit, plus
+    ``conv0`` and one transition per block.
     """
 
     def __init__(
@@ -280,147 +256,125 @@ class MGNN(nn.Module):
         bn_size: int = BN_SIZE,
         layers_per_block: int = LAYERS_PER_BLOCK,
         drug_embed_dim: int = DRUG_EMBEDDING_DIM,
+        num_blocks: int = NUM_BLOCKS,
+        hidden_channels: int | None = None,
     ):
         super().__init__()
+        if num_blocks < 1:
+            raise ValueError("num_blocks must be positive")
+        if layers_per_block < 1:
+            raise ValueError("layers_per_block must be positive")
 
-        self.drug_embed_dim = drug_embed_dim
+        # Table S3's hidden-channel search is mapped locally to DenseNet's
+        # per-layer growth rate: every DenseLayer appends this many channels.
+        # The paper does not define the local bottleneck/transition tensors;
+        # retain the existing 2x bottleneck and transition compression.
+        if hidden_channels is None:
+            effective_hidden_channels = growth_rate
+        else:
+            if growth_rate != GROWTH_RATE and growth_rate != hidden_channels:
+                raise ValueError(
+                    "growth_rate and hidden_channels specify conflicting widths"
+                )
+            effective_hidden_channels = hidden_channels
+        if (
+            not isinstance(effective_hidden_channels, int)
+            or isinstance(effective_hidden_channels, bool)
+            or effective_hidden_channels < 1
+        ):
+            raise ValueError("hidden_channels must be a positive integer")
 
-        # ── Initial convolution (depth 1) ──────────────────────────────────
+        self.num_blocks = int(num_blocks)
+        self.layers_per_block = int(layers_per_block)
+        self.hidden_channels = int(effective_hidden_channels)
+        self.drug_embed_dim = int(drug_embed_dim)
         self.conv0 = GraphConvBn(in_channels, initial_channels)
-        ch = initial_channels  # 32
+        channels = initial_channels
 
-        # ── Dense Block 1 (depth 8) ────────────────────────────────────────
-        self.block1 = MultiscaleBlock(ch, layers_per_block, growth_rate, bn_size)
-        ch = self.block1.out_channels  # 32 + 8*32 = 288
+        # Attribute names intentionally match the legacy default state dict:
+        # block1/transition1 through block3/transition3 remain unchanged.
+        for block_idx in range(1, self.num_blocks + 1):
+            block = MultiscaleBlock(
+                channels, self.layers_per_block, self.hidden_channels, bn_size
+            )
+            self.add_module(f"block{block_idx}", block)
+            channels = block.out_channels
+            transition = GraphConvBn(channels, channels // 2)
+            self.add_module(f"transition{block_idx}", transition)
+            channels = transition.conv.out_channels
 
-        # ── Transition Layer 1 (depth 1): halve channels ──────────────────
-        ch_t1 = ch // 2  # 144
-        self.transition1 = GraphConvBn(ch, ch_t1)
-        ch = ch_t1  # 144
-
-        # ── Dense Block 2 (depth 8) ────────────────────────────────────────
-        self.block2 = MultiscaleBlock(ch, layers_per_block, growth_rate, bn_size)
-        ch = self.block2.out_channels  # 144 + 8*32 = 400
-
-        # ── Transition Layer 2 (depth 1): halve channels ──────────────────
-        ch_t2 = ch // 2  # 200
-        self.transition2 = GraphConvBn(ch, ch_t2)
-        ch = ch_t2  # 200
-
-        # ── Dense Block 3 (depth 8) ────────────────────────────────────────
-        self.block3 = MultiscaleBlock(ch, layers_per_block, growth_rate, bn_size)
-        ch = self.block3.out_channels  # 200 + 8*32 = 456
-
-        # ── Transition Layer 3 (depth 1): halve channels ──────────────────
-        ch_t3 = ch // 2  # 228
-        self.transition3 = GraphConvBn(ch, ch_t3)
-        ch = ch_t3  # 228
-
-        # Store the channel dimension entering the readout FC
-        self.pre_pool_channels = ch  # 228
-
-        # ── Readout: Global Mean Pool + Linear (Section 8.3) ──────────────
-        self.fc = nn.Linear(ch, drug_embed_dim)  # 228 → 96
-
-        # ── Depth accounting (paper definition, Section 8.2) ────────────
-        #
-        # The paper reports 27 layers as 24 DenseLayer units plus 3
-        # transitions, excluding conv0. Each DenseLayer contains two
-        # GraphConv operations, so this is not a literal module count.
-        # The complete implementation has 28 top-level stages and 52
-        # GraphConv modules when conv0 and both bottleneck operations count.
-        self._gcn_depth = (
-            layers_per_block            # block1 (8)
-            + 1                         # transition1
-            + layers_per_block          # block2 (8)
-            + 1                         # transition2
-            + layers_per_block          # block3 (8)
-            + 1                         # transition3
-        )  # = 3×8 + 3 = 27
-        assert self._gcn_depth == 27, (
-            f"GCN depth must be 27 per paper formula 3×8+3; got {self._gcn_depth}"
+        self.pre_pool_channels = channels
+        self.fc = nn.Linear(channels, self.drug_embed_dim)
+        self._gcn_depth = self.num_blocks * (self.layers_per_block + 1)
+        actual_conceptual_depth = sum(
+            getattr(self, f"block{block_idx}").num_layers + 1
+            for block_idx in range(1, self.num_blocks + 1)
+        )
+        assert self._gcn_depth == actual_conceptual_depth, (
+            "MGNN conceptual depth accounting mismatch: "
+            f"expected {self._gcn_depth}, got {actual_conceptual_depth}"
+        )
+        expected_graph_conv_modules = 1 + self.num_blocks * (
+            2 * self.layers_per_block + 1
+        )
+        actual_graph_conv_modules = sum(
+            isinstance(module, gnn.GraphConv) for module in self.modules()
+        )
+        assert actual_graph_conv_modules == expected_graph_conv_modules, (
+            "MGNN GraphConv module accounting mismatch: "
+            f"expected {expected_graph_conv_modules}, got {actual_graph_conv_modules}"
         )
 
-    # ---------------------------------------------------------------------- #
+    @property
+    def final_transition(self) -> GraphConvBn:
+        """Return the final transition, for attribution hooks and inspection."""
+        return getattr(self, f"transition{self.num_blocks}")
+
     def forward(self, data: Data) -> Tensor:
-        """
-        Forward pass through the complete MGNN and its mean-pooling readout.
-
-        Args:
-            data: PyG Data object with:
-                  - data.x         : [total_nodes, 22]  node features
-                  - data.edge_index: [2, num_edges]      bond connectivity
-                  - data.batch     : [total_nodes]       graph membership
-                                     (None for single graphs, auto-set by Batch)
-
-        Returns:
-            y_G: Drug embedding tensor [batch_size, 96]
-        """
         x, edge_index = data.x, data.edge_index
-        batch = data.batch if hasattr(data, 'batch') and data.batch is not None \
-                else torch.zeros(x.size(0), dtype=torch.long, device=x.device)
-
-        # conv0 ── depth 1
+        batch = data.batch if hasattr(data, "batch") and data.batch is not None else torch.zeros(
+            x.size(0), dtype=torch.long, device=x.device
+        )
         x = self.conv0(x, edge_index)
-
-        # block1 ── depth 8
-        x = self.block1(x, edge_index)
-
-        # transition1 ── depth 1
-        x = self.transition1(x, edge_index)
-
-        # block2 ── depth 8
-        x = self.block2(x, edge_index)
-
-        # transition2 ── depth 1
-        x = self.transition2(x, edge_index)
-
-        # block3 ── depth 8
-        x = self.block3(x, edge_index)
-
-        # transition3 ── depth 1
-        x = self.transition3(x, edge_index)
-
-        # Global mean pooling: [total_nodes, 228] → [batch_size, 228]
+        for block_idx in range(1, self.num_blocks + 1):
+            x = getattr(self, f"block{block_idx}")(x, edge_index)
+            x = getattr(self, f"transition{block_idx}")(x, edge_index)
         x = global_mean_pool(x, batch)
+        return self.fc(x)
 
-        # Linear projection: [batch_size, 228] → [batch_size, 96]
-        y_g = self.fc(x)
-
-        return y_g
-
-    # ---------------------------------------------------------------------- #
     def describe_architecture(self) -> str:
-        """Returns a formatted architecture summary string."""
-        t1_in  = self.block1.out_channels        # 288
-        t1_out = t1_in // 2                      # 144
-        t2_in  = self.block2.out_channels        # 400
-        t2_out = t2_in // 2                      # 200
-        t3_in  = self.block3.out_channels        # 456
-        t3_out = t3_in // 2                      # 228
+        """Return conceptual depth, physical module count, and channel sizes."""
+        graph_conv_modules = sum(
+            isinstance(module, gnn.GraphConv) for module in self.modules()
+        )
         lines = [
             "=" * 62,
             "MGNN Architecture Verification",
             "-" * 62,
-            f"  Input node feature dim : {ATOM_FEATURE_DIM}",
-            f"  Initial convolution    : 1  ({ATOM_FEATURE_DIM} -> {INITIAL_CHANNELS})",
-            f"  [conv0 is excluded from paper-reported depth]",
-            f"  Dense Block 1          : 8  ({INITIAL_CHANNELS} -> {self.block1.out_channels})",
-            f"  Transition Layer 1     : 1  ({t1_in} -> {t1_out})",
-            f"  Dense Block 2          : 8  ({t1_out} -> {t2_in})",
-            f"  Transition Layer 2     : 1  ({t2_in} -> {t2_out})",
-            f"  Dense Block 3          : 8  ({t2_out} -> {t3_in})",
-            f"  Transition Layer 3     : 1  ({t3_in} -> {t3_out})",
-            f"  Global Mean Pool + FC  : {t3_out} -> {self.drug_embed_dim}",
-            "-" * 62,
-            f"  Paper-reported depth   : {self._gcn_depth} (24 DenseLayers + 3 transitions)",
-            f"  Top-level stages       : {1 + self._gcn_depth} (includes conv0)",
-            f"  GraphConv modules      : {sum(isinstance(module, gnn.GraphConv) for module in self.modules())}",
-            f"  Drug embedding dim     : {self.drug_embed_dim}",
-            "=" * 62,
+            f"Input node feature dim : {ATOM_FEATURE_DIM}",
+            f"Initial channels       : {self.conv0.conv.out_channels}",
+            f"Dense growth channels  : {self.hidden_channels}",
         ]
+        for block_idx in range(1, self.num_blocks + 1):
+            block = getattr(self, f"block{block_idx}")
+            transition = getattr(self, f"transition{block_idx}")
+            lines.append(
+                f"Block {block_idx}: {block.num_layers} dense units, "
+                f"{block.out_channels} -> {transition.conv.out_channels} transition channels"
+            )
+        lines.extend([
+            f"Readout channels       : {self.pre_pool_channels} -> {self.drug_embed_dim}",
+            f"Conceptual depth       : {self._gcn_depth}",
+            f"Top-level stages       : {1 + self._gcn_depth} (includes conv0)",
+            f"GraphConv modules      : {graph_conv_modules}",
+            "=" * 62,
+        ])
         return "\n".join(lines)
 
     def __repr__(self) -> str:
-        return (f"MGNN(in={ATOM_FEATURE_DIM}, depth={self._gcn_depth}, "
-                f"embed={self.drug_embed_dim})")
+        return (
+            f"MGNN(in={ATOM_FEATURE_DIM}, blocks={self.num_blocks}, "
+            f"layers_per_block={self.layers_per_block}, "
+            f"hidden_channels={self.hidden_channels}, depth={self._gcn_depth}, "
+            f"embed={self.drug_embed_dim})"
+        )
