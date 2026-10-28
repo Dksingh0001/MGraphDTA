@@ -1,0 +1,43 @@
+\documentclass[12pt,oneside]{report}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,longtable,tabularx,array}
+\usepackage[table]{xcolor}
+\usepackage{float}
+\usepackage{caption,subcaption}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc}
+\usepackage{enumitem}
+\usepackage{url}
+\usepackage{fancyhdr}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black,pdftitle={MGraphDTA: Project Implementation and Experimental Analysis},pdfauthor={Deepak Kumar Singh}}
+\setlist{itemsep=2pt,topsep=3pt}
+\setlength{\parskip}{5pt}
+\setlength{\parindent}{0pt}
+\pagestyle{fancy}\fancyhf{}\fancyhead[L]{MGraphDTA Project Report}\fancyhead[R]{\nouppercase{\leftmark}}\fancyfoot[C]{\thepage}
+\definecolor{navy}{HTML}{17365D}\definecolor{lightblue}{HTML}{EAF2F8}\definecolor{lightgray}{HTML}{F3F5F7}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{lightgray},columns=fullflexible}
+\captionsetup{font=small,labelfont=bf}
+\title{MGraphDTA: Deep Multiscale Graph Neural Network for\\Explainable Drug--Target Binding Affinity Prediction\\[6pt]\large Project Implementation and Experimental Analysis}
+\author{Deepak Kumar Singh\\[4pt]\normalsize Indian Institute of Information Technology Design and Manufacturing, Kurnool\\\normalsize Department of Computer Science and Engineering\\\normalsize B.Tech + M.Tech Dual Degree}
+\date{\vspace{1cm}Faculty/Guide: \rule{7cm}{0.4pt}\\[8pt]Course: \rule{8.5cm}{0.4pt}\\[8pt]Academic Year: \rule{6.6cm}{0.4pt}\\[8pt]Date: \rule{8.2cm}{0.4pt}}
+\begin{document}
+\begin{titlepage}\centering\vspace*{1.2cm}{\Large Indian Institute of Information Technology Design and Manufacturing, Kurnool\par}\vspace{1.7cm}{\huge\bfseries MGraphDTA:\\Deep Multiscale Graph Neural Network for\\Explainable Drug--Target Binding Affinity Prediction\par}\vspace{0.7cm}{\Large Project Implementation and Experimental Analysis\par}\vspace{1.6cm}{\large\bfseries Deepak Kumar Singh\par}\vspace{0.5cm}Department of Computer Science and Engineering\\B.Tech + M.Tech Dual Degree\vfill\begin{tabular}{rl}Faculty/Guide: & \rule{8cm}{0.4pt}\\[10pt]Course: & \rule{8cm}{0.4pt}\\[10pt]Academic Year: & \rule{8cm}{0.4pt}\\[10pt]Date: & \rule{8cm}{0.4pt}\end{tabular}\vspace{1cm}\end{titlepage}
+\pagenumbering{roman}\begin{abstract}\input{sections/abstract}\end{abstract}
+\tableofcontents\listoffigures\listoftables\clearpage\pagenumbering{arabic}
+\input{sections/introduction_paper}
+\input{sections/training_results}
+\input{sections/explainability_experiments}
+\input{sections/limitations_conclusion}
+\nocite{mgraphdtaauthorscode,mgraphdtaproject,rcsbpdb,pdb2hyy,pdb2itz,pdb1m17,pdb1hsg,pdb1stp}
+\bibliographystyle{unsrt}\bibliography{references}
+\end{document}

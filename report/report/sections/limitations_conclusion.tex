@@ -1,0 +1,87 @@
+﻿\chapter{Validation, Repository Guide, and Reproducibility}
+\section{Automated validation status}
+The current suite has eight test modules and 36 collected tests, including parametrized cases. An earlier project milestone reported 31 passing tests; the current verified run is 36 passed. A default pytest invocation initially yielded 30 passed and 6 setup errors because pytest could not access its configured Windows temporary/cache paths. Rerunning the same suite with a writable workspace temporary directory and the cache plugin disabled yielded 36 passed.
+
+\begin{table}[H]\centering\caption{Test areas and current execution evidence}\label{tab:tests}
+\begin{tabular}{p{0.29\linewidth}p{0.5\linewidth}p{0.14\linewidth}}
+\toprule Area & Repository test module / coverage & Status here\\
+\midrule
+Davis data & \texttt{test\_davis\_dataset.py}; dataset counts, affinity conversion, graph batching & Passed\\
+Atom features & \texttt{test\_atom\_features.py}; vector dimensions and valid values & Passed\\
+MGNN / MCNN / integration & \texttt{test\_mgnn.py}, \texttt{test\_mcnn.py}, \texttt{test\_mgraphdta.py}; shapes, batches and gradients & Passed\\
+Metrics & \texttt{test\_metrics.py}; regression metric behavior & Passed\\
+Grad-AAM & \texttt{test\_grad\_aam.py}; attribution shape/normalization and hook behavior & Passed\\
+Training protocol & \texttt{test\_training.py}; split, checkpoint, history, test isolation & Passed after workspace temp override\\
+Earlier milestone / current suite & Earlier milestone: 31; current suite: 36 tests & 36 passed\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Project file structure}
+\begin{lstlisting}
+MGraphDTA/
+|-- src/                 dataset, preprocessing, metrics, training
+|   |-- models/          MGNN, MCNN, integrated MGraphDTA
+|   `-- explainability/  Grad-AAM implementation
+|-- scripts/             environment, visualization, protein graph,
+|                        structural and experiment utilities
+|-- tests/               component, integration, metric and training tests
+|-- data/raw/davis/      local raw Davis source and folds (not tracked)
+|-- data/processed/davis/ generated interaction CSVs (not tracked)
+|-- results/davis/       metrics, histories, Grad-AAM, graph experiments
+|-- results/demos/       independent protein-ligand demonstrations
+|-- checkpoints/         checkpoint directory (local files)
+|-- README.md, PROJECT_PLAN.md, requirements.txt
+`-- report/              this LaTeX report project
+\end{lstlisting}
+Important entry points are \texttt{src/preprocessing.py} (SMILES and sequence preprocessing), \texttt{src/dataset.py} (Davis rows and graph objects), \texttt{src/models/} (encoders and fusion), \texttt{src/train.py} (training/evaluation), \texttt{src/metrics.py}, and \texttt{src/explainability/grad\_aam.py}. Scripts under \texttt{scripts/} generate secondary graph and structural outputs. Raw data and several outputs are gitignored local artifacts, so a clean clone may not contain them.
+
+\section{Reproduction commands and environment}
+The README and requirements file document Python 3.12, PyTorch 2.6.0 with CUDA 12.4 builds, PyTorch Geometric 2.8.0, and RDKit 2026.03.6. These are repository-documented environment pins; the original model run records device \texttt{cuda}. A specific GPU model is not verified in the available result metadata. The local raw Davis files must be supplied before data-dependent commands.
+\begin{lstlisting}[caption={Documented environment and primary run commands}]
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+
+python -m src.train --epochs 150 --steps-per-epoch 50 \
+  --batch-size 32 --learning-rate 0.0005 --patience 30 \
+  --validation-fraction 0.1 --seed 42 --device cuda
+
+python -m src.train --evaluate-checkpoint \
+  --checkpoint results/davis/run_112_backup/mgraphdta_best.pt \
+  --evaluation-output results/davis/run_112_backup/evaluation_metrics_corrected.json \
+  --batch-size 32 --device cuda
+python -m src.train --help
+python -m pytest -q --basetemp .pytest-tmp -p no:cacheprovider
+\end{lstlisting}
+The evaluation-only command scores the selected checkpoint on the independent test fold and writes the requested JSON metrics. The pytest command directs temporary files into the workspace and disables the pytest cache plugin because the default external temporary/cache locations were inaccessible in this environment.
+
+\chapter{Limitations and Future Work}
+\section{Limitations}
+\begin{itemize}
+\item The Davis training protocol is project-specific and is not an exact reproduction of the paper's full protocol.
+\item The primary protein encoder consumes a sequence; it does not use a 3D protein graph.
+\item The separate 2D protein graph experiment uses sequence adjacency only and has no spatial contacts.
+\item The main model has no integrated ligand--protein 3D contact graph.
+\item The RCSB audit is preliminary and incomplete because 66 sequence queries returned errors; its aggregate source file is unavailable for independent recomputation.
+\item The 9AAA AKT1 result is project-reported and supported by an inspection script, but the saved output needed to recheck its sequence match and atom-record classification is unavailable.
+\item The five structural demonstrations are separate experimental examples, not Davis model predictions or training examples.
+\item The primary reported evaluation covers Davis and a single reported run; KIBA and Metz experiments are not implemented/available as results.
+\item The default pytest invocation used inaccessible temporary/cache locations; the same suite passes with workspace-local temporary storage and cache disabled.
+\item Grad-AAM is a model attribution visualization and is not evidence by itself of molecular binding contacts or causal chemistry.
+\end{itemize}
+
+\section{Future work (not completed)}
+Future work could implement and document the exact paper split, tuning, and repeated-run protocol; evaluate multiple seeds; add KIBA and Metz datasets; construct a residue-level structure graph from verified structures; build ligand--protein contact graphs; evaluate structure-aware attention; test attribution against independent chemical or experimental evidence; and complete a systematic structure audit with query failures tracked and resolved. These are proposals and are not completed project results.
+
+\chapter{Conclusion}
+This project implements the central MGraphDTA architecture for Davis affinity regression: an RDKit molecular graph with 22-dimensional atom features is encoded by a dense multiscale MGNN; a tokenized target sequence is encoded by a three-branch MCNN; and an MLP predicts transformed affinity from the concatenated embeddings. The best stored validation checkpoint was selected at epoch 91. Its independent test results were MSE 0.257041, RMSE 0.506992, CI 0.879045, and $r_m^2$ 0.681706 under the project's single-seed, test-isolated protocol.
+
+The repository also contains five Grad-AAM examples, an experimental sequence-adjacency protein GNN run, training visualizations, a preliminary/incomplete structure audit, and five separate experimental structural demonstrations. These add interpretability and technical context without turning model attributions into experimental claims. Important limitations remain: the training procedure does not exactly reproduce the paper, the primary protein representation lacks 3D structure, and the RCSB aggregate summary cannot be independently recomputed because its source output is unavailable. The current 36-test suite passes with workspace-local pytest temporary storage. The contribution is a documented implementation and experimental analysis, not a claim of exact replication or new validated binding biology.
+
+
+
+
+
+
+

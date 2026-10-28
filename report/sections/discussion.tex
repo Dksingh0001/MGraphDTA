@@ -1,0 +1,50 @@
+\section{Implementation contributions and evidence}
+The contribution is an implementation and documented experimental analysis of an existing research approach, not invention of the original MGraphDTA architecture.
+
+\begin{table}[tb]\centering\scriptsize
+\caption{Implementation contributions and evidence}
+\label{tab:contrib}
+\begin{tabularx}{\linewidth}{p{0.20\linewidth}p{0.37\linewidth}p{0.20\linewidth}X}
+\toprule Contribution & Implemented or investigated & Evidence & Result/status \\
+\midrule
+Davis data pipeline & Matrix/fold loading, pair table, p$K_d$ transform, PyG records & `src/dataset.py`; processed tables & 30,056 interactions; 25,046/5,010 supplied split. \\
+Molecular graph features & RDKit graph, 22 node features, bidirected bond edges & `src/preprocessing.py`; atom-feature tests & Invalid SMILES rejected; no edge-attribute tensor in model input. \\
+MGNN/MCNN and fusion & Dense multiscale graph encoder, three sequence CNN branches, MLP regressor & `src/models/` & Shape/depth documented and tested in repository test modules. \\
+Training and checkpointing & Seeded validation split, Adam/MSE, validation-best checkpoint, independent test evaluation & `src/train.py`; histories and JSON & Primary run manually stopped; fast run early-stopped. \\
+Metrics & MSE, RMSE, CI, modified $r_m^2$ & `src/metrics.py`; `tests/test_metrics.py` & Older primary evaluation has conflicting $r_m^2$; corrected value reported. \\
+Scaling investigation & Author feature comparison, validated versioned feature bundle, recorded scaled-run evaluation & `SCALING_EXPERIMENT_PLAN.md`; scaled manifests/run & Preprocessing transform checked; model effect is confounded and not causal. \\
+Multi-seed validation & Checkpoint/history consistency and fresh evaluation for seeds 44--46 & Validation manifest and reevaluation report & Metrics reproduce; process outcomes still conflict. \\
+Protein graph alternative & Separate residue adjacency GNN experiment & `scripts/train_protein_gnn_affinity.py`; experiment JSON/history & Exploratory; distinct architecture and input representation. \\
+Molecular visualization & RDKit renderings with atom-level Grad-AAM scores & `src/explainability/grad_aam.py`; sample JSON/PNG & Qualitative model attribution, not causal evidence. \\
+Structure demonstrations & Coordinate-based interaction screens for five unrelated PDB complexes & `results/demos/protein_ligand_interactions/` & Demonstrates structural analysis; not a model prediction or Davis result. \\
+Reproducibility checks & Focused tests, hashes/manifests and retained run histories & `tests/`; reports/manifests & README records 37 focused protocol/aggregation tests; not a fresh full-suite result. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Paper comparison and interpretation}
+The implementation follows the paper’s high-level idea: molecular graph input through a deep dense MGNN, protein sequence through three multiscale CNN branches, feature concatenation, an MLP, MSE regression and atom visualization. The default architecture dimensions align closely with the pinned author source. Key differences are material: raw node features are the default rather than author per-molecule min--max scaling; the primary and validated multi-seed experiments use batch size 32 (paper setup is documented as 512); the primary experiment is one manually stopped seed; and the local protocol uses its own seeded validation holdout and 50-step epochs. The available results therefore support “implementation inspired by MGraphDTA,” not “complete reproduction.”
+
+The paper result and primary project result are not a controlled head-to-head evaluation. The paper reports MSE .265, CI .822 and $r_m^2$ .701 in its Davis table; this project’s single primary run reports .2570, .8790 and .6817 under a different training and feature-preparation path. Neither apparent advantage in a metric nor a direct difference should be interpreted as a model improvement without matched splits, seeds, preprocessing, and paper protocol.
+
+\section{Testing and reproducibility}
+The repository has tests for atom features, Davis loading, scaled data, feature-scaling behavior, MGNN, MCNN, integrated model, metrics, training, Grad-AAM, paper-protocol helpers and multi-seed aggregation. The latest project README records 37 passing focused protocol/aggregation tests. Other existing report drafts cite different suite counts and test scopes; this report does not convert those records into a current full-suite pass. No tests or training were run while preparing this report.
+
+Main repository HEAD was `5ee53c404b9b3612fc4783b0dce9aa916b027885`; the pinned author checkout reports `54386680e8c9562f708a0fe5d381038c62111df6`. Parent Git status already showed the author checkout as a nested repository plus untracked LaTeX/archive artifacts. Data, most results and checkpoints are ignored by Git, so a clean clone cannot necessarily reproduce these exact plots or metrics. Original run code hashes, validation indices and test CSV hash are missing for some runs. The validated checkpoint evaluation uses current test CSV SHA-256 `5658ff56c9ac6b0a9649fed632d817d58c4a9fcf926919d7307a028184d18638`; original run identity is not proven by that later hash.
+
+\section{Limitations and next steps}
+\begin{itemize}
+\item The evaluation split is interaction-level. Recurring compounds/targets appear across partitions, so cold-drug and cold-target performance is unknown.
+\item Long sequences are truncated to 1,200 and padding/unknown residues share an ID; the MCNN has no explicit padding mask.
+\item The primary run was manually interrupted, the scaled-run launch settings are incomplete, and multi-seed process statuses conflict. The reasons for result differences remain unresolved.
+\item Default feature scaling differs from author preprocessing. No complete paired multi-seed scaling ablation exists, so the observed raw/scaled metrics cannot establish a scaling effect.
+\item The separate protein-graph model uses sequence adjacency, not 3D structure; it should not be interpreted as a structure-aware binding model.
+\item Grad-AAM is qualitative. Attribution scores can reflect model sensitivity, but a highlighted atom does not prove a causal biochemical interaction.
+\item Structure interaction diagrams are independent demonstrations from deposited coordinates. Their geometric criteria are not force-field energies and are not connected to the model’s output.
+\item The official article is bibliographically verified; the local PDF extraction and complete ESI review remain incomplete. Current environment/hardware versions were not live-captured.
+\end{itemize}
+
+Before final academic submission, obtain the full ESI, preserve exact environment and source/data/split hashes for each run, resolve process status from original launcher logs, and report any future scaling comparison with matched seeds/configuration and validation-selected checkpoints. Keep test data out of hyperparameter selection. Describe Grad-AAM as attribution and the interaction panels as separate structure demonstrations.
+
+\section{Conclusion}
+The project implements the principal MGraphDTA-style data path and dual encoder for Davis: 22-feature atom graphs pass through MGNN, tokenized protein sequences pass through MCNN, and an MLP predicts p$K_d$. The primary run’s best validation checkpoint (epoch 91) achieved test MSE 0.2570, RMSE 0.5070, CI 0.8790 and $r_m^2$ 0.6817 after a manual stop at epoch 112. Separate results expose batch-size and preprocessing sensitivities, but the available comparisons do not isolate their causes. Three additional checkpoints reproduce their saved metrics on the current test table while their historical process statuses remain inconsistent. The report demonstrates implemented software and exploratory experiments with appropriate evidence boundaries; it does not claim paper reproduction or verified biological mechanism.
